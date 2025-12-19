@@ -1,0 +1,98 @@
+===========================================
+PHASE 1 TESTING - STEP BY STEP GUIDE
+===========================================
+
+STEP 1: OpenAI API Key Add Karo
+--------------------------------
+1. OpenAI website pe jao: https://platform.openai.com/api-keys
+2. Login karo aur "Create new secret key" click karo
+3. Key copy karo (sk-... format mein hogi)
+4. apps/api/src/.env file mein jao
+5. OPENAI_API_KEY=sk-your-key-here add karo (without quotes)
+
+Example:
+OPENAI_API_KEY=sk-proj-abc123xyz...
+
+
+STEP 2: Test Script Run Karo
+-----------------------------
+Terminal mein yeh command run karo:
+
+cd /Users/admin/Desktop/chatbot/apps/api
+node test-phase1-integration.js
+
+Expected Output:
+✅ Embedding generated successfully!
+✅ LLM response generated successfully!
+✅ Pinecone connection successful!
+✅ ALL TESTS PASSED!
+
+
+STEP 3: Sample CSV Data Upload Karo
+------------------------------------
+1. Sample CSV file banao: sample-qa.csv
+
+File content:
+question,answer,audience
+"What services does Mobiloitte provide?","Mobiloitte provides AI development, chatbot solutions, and NLP services","public"
+"What is your contact email?","Contact us at info@mobiloitte.com","public"
+
+2. Terminal mein yeh command run karo:
+
+curl -X POST http://localhost:4000/api/ingest/csv \
+  -F "file=@sample-qa.csv" \
+  -F "audience=public"
+
+Expected Response:
+{
+  "message": "CSV ingestion completed successfully",
+  "qaPairsCount": 2,
+  "vectorsIndexed": 2
+}
+
+
+STEP 4: Backend Server Start Karo
+----------------------------------
+Terminal mein:
+cd /Users/admin/Desktop/chatbot/apps/api
+npm run dev
+
+Server start hoga: http://localhost:4000
+
+
+STEP 5: Chat API Test Karo
+---------------------------
+Nayi terminal mein:
+
+curl -X POST http://localhost:4000/api/chat/message \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What services does Mobiloitte provide?",
+    "sessionId": "test-123"
+  }'
+
+Expected: Real AI response milega!
+
+
+STEP 6: Frontend se Test Karo
+------------------------------
+1. Frontend terminal mein:
+cd /Users/admin/Desktop/chatbot/apps/web
+npm run dev
+
+2. Browser mein jao: http://localhost:3000/chat
+3. Login karo
+4. Question pucho: "What services does Mobiloitte provide?"
+5. Real AI response dekho!
+
+
+TROUBLESHOOTING:
+----------------
+❌ "OpenAI API key not found"
+   → .env file mein OPENAI_API_KEY check karo
+
+❌ "Pinecone connection failed"  
+   → PINECONE_API_KEY check karo
+
+❌ "No matches found"
+   → Pehle CSV data upload karo (Step 3)

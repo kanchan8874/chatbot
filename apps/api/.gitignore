@@ -1,0 +1,16 @@
+# Storage directories (raw files)
+storage/
+
+# Environment variables
+src/.env
+
+# Logs
+logs/
+*.log
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
