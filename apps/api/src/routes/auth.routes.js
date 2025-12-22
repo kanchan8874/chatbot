@@ -6,99 +6,118 @@ const router = express.Router();
 // Secret key for JWT (in production, use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET || "mobiloitte_chatbot_secret_key";
 
-// Placeholder user data (in production, this would come from a database)
-const users = [
+// Static demo users (3 fixed accounts as per PRD roles)
+// NOTE: Passwords are plain-text ONLY for this demo environment.
+// Do NOT use this approach in production.
+const STATIC_USERS = [
   {
-    id: 1,
-    email: "user@example.com",
-    password: "password123", // In production, this should be hashed
-    name: "Test User"
+    id: "1",
+    name: "Mobiloitte Client",
+    email: "client@mobiloitte.com",
+    password: "client123",
+    role: "client",
+    employeeId: null,
   },
   {
-    id: 2,
-    email: "google.user@example.com",
-    password: "password123", // In production, this should be hashed
-    name: "Google User"
-  }
+    id: "2",
+    name: "Mobiloitte HR",
+    email: "hr@mobiloitte.com",
+    password: "hr123",
+    role: "employee",
+    employeeId: "EMP001",
+  },
+  {
+    id: "3",
+    name: "Mobiloitte Admin",
+    email: "admin@mobiloitte.com",
+    password: "admin123",
+    role: "admin",
+    employeeId: null,
+  },
 ];
 
-// Login route
+// Helper to generate JWT from user object
+function generateTokenFromUser(user) {
+  return jwt.sign(
+    {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role || "client",
+      employeeId: user.employeeId || null,
+    },
+    JWT_SECRET,
+    { expiresIn: "24h" }
+  );
+}
+
+// Helper to sanitize user object for response
+function sanitizeUser(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role || "client",
+    employeeId: user.employeeId || null,
+  };
+}
+
+// Registration is disabled in this static-demo phase
+router.post("/register", (req, res) => {
+  return res.status(403).json({
+    message: "Registration is disabled in this demo. Please use one of the provided demo accounts.",
+  });
+});
+
+// Login route (uses 3 static users)
 router.post("/login", (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Find user (in production, query database)
-    const user = users.find(u => u.email === email && u.password === password);
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const user = STATIC_USERS.find(
+      (u) => u.email.toLowerCase() === normalizedEmail && u.password === password
+    );
     
     if (!user) {
-      return res.status(401).json({ 
-        message: "Invalid email or password" 
-      });
+      return res.status(401).json({ message: "Invalid email or password" });
     }
     
-    // Generate JWT token
-    const token = jwt.sign(
-      { 
-        userId: user.id, 
-        email: user.email,
-        name: user.name
-      }, 
-      JWT_SECRET, 
-      { expiresIn: "24h" }
-    );
+    const token = generateTokenFromUser(user);
     
     return res.json({ 
       message: "Login successful",
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name
-      }
+      user: sanitizeUser(user),
     });
   } catch (error) {
+    console.error("Login error:", error);
     return res.status(500).json({ 
       message: "Login failed", 
-      error: error.message 
+      error: error.message,
     });
   }
 });
 
-// Google login route (placeholder)
+// Google login route (mapped to client demo account)
 router.post("/google-login", (req, res) => {
   try {
-    // In a real implementation, you would verify the Google token
-    // and create/get user from database
-    
-    const { googleToken } = req.body;
-    
-    // For demo purposes, we'll create a mock user
-    const user = {
-      id: 2,
-      email: "google.user@example.com",
-      name: "Google User"
-    };
-    
-    // Generate JWT token
-    const token = jwt.sign(
-      { 
-        userId: user.id, 
-        email: user.email,
-        name: user.name
-      }, 
-      JWT_SECRET, 
-      { expiresIn: "24h" }
-    );
+    const clientUser = STATIC_USERS.find((u) => u.role === "client");
+    const token = generateTokenFromUser(clientUser);
     
     return res.json({ 
-      message: "Google login successful",
+      message: "Google login demo successful (mapped to client role).",
       token,
-      user
+      user: sanitizeUser(clientUser),
     });
   } catch (error) {
     return res.status(500).json({ 
       message: "Google login failed", 
-      error: error.message 
+      error: error.message,
     });
   }
 });
@@ -122,7 +141,9 @@ router.post("/verify-token", (req, res) => {
       user: {
         id: decoded.userId,
         email: decoded.email,
-        name: decoded.name
+        name: decoded.name,
+        role: decoded.role || "client",
+        employeeId: decoded.employeeId || null,
       }
     });
   } catch (error) {
