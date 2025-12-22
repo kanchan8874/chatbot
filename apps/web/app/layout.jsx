@@ -8,10 +8,10 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className="h-full">
-      <body className="h-full overflow-hidden">
+    <html lang="en">
+      <body className="min-h-screen">
         <AuthProvider>
-          <div className="h-full" role="application" aria-label="AI chatbot workspace">
+          <div role="application" aria-label="AI chatbot workspace">
             {children}
           </div>
         </AuthProvider>

@@ -1,24 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "../../context/AuthContext";
 import { API_ENDPOINTS } from "../../config/api";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("user@example.com");
-  const [password, setPassword] = useState("password123");
+  // Pre-fill with demo client credentials for quick testing
+  const [email, setEmail] = useState("client@mobiloitte.com");
+  const [password, setPassword] = useState("client123");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
-  const { login, isAuthenticated } = useAuth();
-
-  // Redirect to chat if already authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      router.push("/chat");
-    }
-  }, [isAuthenticated, router]);
+  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,8 +24,8 @@ export default function LoginPage() {
       const result = await login(email, password);
       
       if (result.success) {
-        // Redirect to chat page after successful login
-        router.push("/chat");
+        // Redirect to homepage after successful login
+        router.push("/");
       } else {
         setError(result.message);
       }
@@ -46,131 +41,141 @@ export default function LoginPage() {
     setError("");
     
     try {
-      // In a real implementation, you would integrate with Google OAuth
-      // For demo purposes, we'll call the Google login API directly
+      // Google OAuth - Demo implementation
+      // In production, use proper Google OAuth flow
       const response = await fetch(API_ENDPOINTS.AUTH.GOOGLE_LOGIN, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          googleToken: 'fake-google-token-for-demo' // In real implementation, this would be actual Google token
+          googleToken: 'demo-google-token-' + Date.now()
         }),
       });
 
       const data = await response.json();
       
       if (response.ok) {
-        // Save token to localStorage
         localStorage.setItem('token', data.token);
-        // Redirect to chat page after successful login
-        router.push("/chat");
+        router.push("/");
       } else {
-        setError(data.message);
+        setError(data.message || "Google login failed. Please use email/password.");
       }
     } catch (err) {
-      setError("Google login failed. Please try again.");
+      setError("Google login is not configured. Please use email/password to sign in.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (isAuthenticated) {
-    return null; // Will redirect in useEffect
-  }
-
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-[#1a1b23] via-[#252630] to-[#1a1b23] px-4 py-12 sm:px-6 lg:px-8">
-      {/* Background Pattern */}
-      <div className="fixed inset-0 opacity-[0.03] pointer-events-none" style={{
-        backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,
-        backgroundSize: '40px 40px'
-      }} />
-      
-      <div className="w-full max-w-[440px] relative z-10">
-        {/* Premium Card Container */}
-        <div className="relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.03] backdrop-blur-xl shadow-premium-card p-8 sm:p-10 login-card-enter">
-          {/* Card Inner Glow */}
-          <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/[0.05] to-transparent pointer-events-none" />
-          
-          {/* Logo and Header Section */}
-          <div className="flex flex-col items-center mb-8">
-            <div className="mb-6 flex items-center justify-center">
-              <div className="relative h-16 w-16 flex items-center justify-center">
+    <div className="min-h-screen bg-white">
+      {/* Navbar */}
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <Link href="/" className="flex items-center gap-3">
+              <div className="relative h-10 w-10 flex items-center justify-center">
                 <img
                   src="/assets/logo1.png"
                   alt="Mobiloitte AI Logo"
-                  width={64}
-                  height={64}
-                  className="h-16 w-16 object-contain drop-shadow-lg"
-                  style={{ 
-                    display: 'block',
-                    position: 'relative',
-                    zIndex: 10
-                  }}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    const fallback = e.target.parentElement?.querySelector('.logo-fallback');
-                    if (fallback) {
-                      fallback.style.display = 'flex';
-                      fallback.classList.remove('hidden');
-                    }
-                  }}
-                  onLoad={(e) => {
-                    const fallback = e.target.parentElement?.querySelector('.logo-fallback');
-                    if (fallback) {
-                      fallback.style.display = 'none';
-                      fallback.classList.add('hidden');
-                    }
-                    e.target.style.display = 'block';
-                  }}
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 object-contain"
                 />
-                <div 
-                  className="logo-fallback hidden absolute inset-0 h-16 w-16 items-center justify-center rounded-xl bg-chat-user shadow-lg"
-                  style={{ zIndex: 0, display: 'none' }}
-                >
-                  <span className="text-2xl font-bold text-white">M</span>
+              </div>
+              <span className="text-xl font-bold text-[#E31E24] tracking-tight">
+                MOBILOITTE AI
+              </span>
+            </Link>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="px-4 py-2 text-sm font-semibold text-gray-800 uppercase tracking-wide hover:text-[#E31E24] transition-colors duration-200"
+              >
+                Home
+              </Link>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12 sm:px-6 lg:px-8 bg-gradient-to-br from-gray-50 to-white">
+        <div className="w-full max-w-md">
+          {/* Card */}
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 sm:p-10">
+            {/* Logo and Header */}
+            <div className="text-center mb-8">
+              <div className="flex justify-center mb-6">
+                <div className="relative h-16 w-16 flex items-center justify-center">
+                  <img
+                    src="/assets/logo1.png"
+                    alt="Mobiloitte AI Logo"
+                    width={64}
+                    height={64}
+                    className="h-16 w-16 object-contain"
+                  />
                 </div>
               </div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                Welcome back
+              </h1>
+              <p className="text-sm text-gray-600">
+                Sign in to access Mobiloitte AI Chatbot
+              </p>
             </div>
-            <h1 className="text-3xl font-bold text-white tracking-tight mb-2">
-              Welcome back
-            </h1>
-            <p className="text-[15px] text-[#9ca3af] leading-relaxed text-center">
-              Sign in to access Mobiloitte AI Chatbot
-            </p>
-          </div>
-          
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-              <div className="flex items-center gap-2.5 text-sm text-red-400">
-                <svg
-                  className="h-5 w-5 flex-shrink-0"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <span>{error}</span>
+
+            {/* Error Message */}
+            {error && (
+              <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2 text-sm text-red-600">
+                  <svg
+                    className="h-5 w-5 flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <span>{error}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Google Sign In Button (disabled in static demo) */}
+            <div className="mb-6">
+              <button
+                type="button"
+                disabled
+                className="w-full h-12 rounded-lg border-2 border-gray-200 bg-gray-50 text-gray-400 text-sm font-semibold cursor-not-allowed flex items-center justify-center gap-3"
+              >
+                <span>Google sign-in is disabled in this demo</span>
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-white text-gray-500">Or continue with email</span>
               </div>
             </div>
-          )}
-          
-          {/* Login Form */}
-          <form className="space-y-5" onSubmit={handleSubmit}>
-            <div className="space-y-5">
+
+            {/* Login Form */}
+            <form className="space-y-5" onSubmit={handleSubmit}>
               {/* Email Input */}
               <div>
                 <label 
                   htmlFor="email-address" 
-                  className="block text-sm font-medium text-[#d1d5db] mb-2.5 tracking-tight"
+                  className="block text-sm font-semibold text-gray-700 mb-2"
                 >
                   Email address
                 </label>
@@ -182,19 +187,27 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full h-12 rounded-xl border border-white/10 bg-white/[0.06] px-4 text-[15px] text-white placeholder:text-[#6b7280] focus:border-chat-user/60 focus:bg-white/[0.08] focus:outline-none focus:shadow-premium-input-focus transition-all duration-200 ease-out"
+                  className="w-full h-12 rounded-lg border-2 border-gray-300 bg-white px-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 transition-all duration-200"
                   placeholder="you@example.com"
                 />
               </div>
               
               {/* Password Input */}
               <div>
-                <label 
-                  htmlFor="password" 
-                  className="block text-sm font-medium text-[#d1d5db] mb-2.5 tracking-tight"
-                >
-                  Password
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label 
+                    htmlFor="password" 
+                    className="block text-sm font-semibold text-gray-700"
+                  >
+                    Password
+                  </label>
+                  <a 
+                    href="#" 
+                    className="text-sm font-medium text-[#E31E24] hover:text-[#C41E3A] transition-colors"
+                  >
+                    Forgot password?
+                  </a>
+                </div>
                 <input
                   id="password"
                   name="password"
@@ -203,43 +216,32 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-12 rounded-xl border border-white/10 bg-white/[0.06] px-4 text-[15px] text-white placeholder:text-[#6b7280] focus:border-chat-user/60 focus:bg-white/[0.08] focus:outline-none focus:shadow-premium-input-focus transition-all duration-200 ease-out"
+                  className="w-full h-12 rounded-lg border-2 border-gray-300 bg-white px-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 transition-all duration-200"
                   placeholder="Enter your password"
                 />
               </div>
-            </div>
 
-            {/* Remember Me & Forgot Password */}
-            <div className="flex items-center justify-between pt-1">
-              <div className="flex items-center group cursor-pointer">
+              {/* Remember Me */}
+              <div className="flex items-center">
                 <input
                   id="remember-me"
                   name="remember-me"
                   type="checkbox"
-                  className="h-4.5 w-4.5 rounded-md border-white/20 bg-white/[0.06] text-chat-user focus:ring-2 focus:ring-chat-user/30 focus:ring-offset-0 transition-all duration-200 cursor-pointer"
+                  className="h-4 w-4 rounded border-gray-300 text-[#E31E24] focus:ring-[#E31E24] cursor-pointer"
                 />
                 <label 
                   htmlFor="remember-me" 
-                  className="ml-2.5 text-sm text-[#9ca3af] cursor-pointer group-hover:text-[#d1d5db] transition-colors duration-200"
+                  className="ml-2 text-sm text-gray-600 cursor-pointer"
                 >
                   Remember me
                 </label>
               </div>
 
-              <a 
-                href="#" 
-                className="text-sm font-medium text-chat-user hover:text-chat-accent-hover transition-colors duration-200"
-              >
-                Forgot password?
-              </a>
-            </div>
-
-            {/* Sign In Button */}
-            <div className="pt-2">
+              {/* Sign In Button */}
               <button
                 type="submit"
                 disabled={isLoading}
-                className="group relative w-full h-12 rounded-xl bg-chat-user text-white text-[15px] font-semibold shadow-premium-button hover:shadow-premium-button-hover hover:bg-chat-accent-hover active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-chat-user/40 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-premium-button disabled:hover:bg-chat-user transition-all duration-200 ease-out"
+                className="w-full h-12 rounded-lg bg-gradient-to-r from-[#E31E24] to-[#C41E3A] text-white text-sm font-semibold shadow-lg hover:shadow-xl hover:from-[#C41E3A] hover:to-[#E31E24] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-[#E31E24] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
                 {isLoading ? (
                   <span className="flex items-center justify-center">
@@ -250,64 +252,20 @@ export default function LoginPage() {
                     Signing in...
                   </span>
                 ) : (
-                  <span className="relative z-10">Sign in</span>
+                  "Sign in"
                 )}
               </button>
-            </div>
-          </form>
+            </form>
           
-          {/* Divider */}
-          <div className="relative my-8">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/10"></div>
+            {/* Demo credentials helper */}
+            <div className="mt-6 text-xs text-gray-500">
+              <p className="font-semibold mb-1">Demo logins (static users):</p>
+              <ul className="space-y-1">
+                <li>Client: client@mobiloitte.com / client123</li>
+                <li>HR (Employee): hr@mobiloitte.com / hr123</li>
+                <li>Admin: admin@mobiloitte.com / admin123</li>
+              </ul>
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-transparent text-[#6b7280] text-[13px]">
-                Or continue with
-              </span>
-            </div>
-          </div>
-
-          {/* Google Sign In Button */}
-          <div>
-            <button
-              onClick={handleGoogleLogin}
-              disabled={isLoading}
-              className="group w-full h-12 rounded-xl border border-white/10 bg-white/[0.04] text-[15px] font-medium text-white hover:bg-white/[0.08] hover:border-white/15 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-white/20 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-out flex items-center justify-center gap-3"
-            >
-              <svg className="h-5 w-5 flex-shrink-0" viewBox="0 0 24 24">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              <span>Sign in with Google</span>
-            </button>
-          </div>
-          
-          {/* Sign Up Link */}
-          <div className="mt-8 text-center">
-            <p className="text-sm text-[#9ca3af]">
-              Don't have an account?{" "}
-              <a 
-                href="#" 
-                className="font-semibold text-chat-user hover:text-chat-accent-hover transition-colors duration-200"
-              >
-                Sign up
-              </a>
-            </p>
           </div>
         </div>
       </div>

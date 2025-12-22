@@ -4,6 +4,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 export const API_ENDPOINTS = {
   AUTH: {
     LOGIN: `${API_BASE_URL}/api/auth/login`,
+    REGISTER: `${API_BASE_URL}/api/auth/register`,
     GOOGLE_LOGIN: `${API_BASE_URL}/api/auth/google-login`,
     VERIFY_TOKEN: `${API_BASE_URL}/api/auth/verify-token`,
     LOGOUT: `${API_BASE_URL}/api/auth/logout`,
