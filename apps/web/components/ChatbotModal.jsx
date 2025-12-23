@@ -202,7 +202,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
     ? "Mobiloitte Admin Assistant" 
     : isEmployee 
     ? "Mobiloitte HR Assistant" 
-    : "Mobiloitte AI";
+    : " AI Assistant  ";
 
   return (
     <>
@@ -298,7 +298,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       </div>
                       <div className="flex-1 pt-1">
                         <p className="text-sm text-gray-800 leading-relaxed">
-                          Hi! I'm your {assistantTitle.toLowerCase()}. How can I assist you today? whats your plan today?? . Can I help you with anything??
+                          Hi! I'm your Mobiloitte{assistantTitle.toUpperCase()}.What would you like to do today? I’m here to help!
                         </p>
                         {!isAuthenticated && (
                           <p className="text-xs text-gray-500 mt-2">
