@@ -106,10 +106,59 @@ async function deleteOldVectors(sourceId, oldVersion, namespace) {
   }
 }
 
-// CSV Ingestion Route
+// CSV Ingestion Route (STRICTLY for CSV files only)
 router.post("/csv", upload.single("file"), async (req, res) => {
   try {
-    const { audience = "public", sourceId = uuidv4() } = req.body;
+    // Basic file presence check
+    if (!req.file) {
+      return res.status(400).json({
+        message: "No file uploaded. Please select a CSV file."
+      });
+    }
+
+    const mimeType = req.file.mimetype || "";
+    const originalName = (req.file.originalname || "").toLowerCase();
+
+    // Detect obvious document types accidentally sent to CSV endpoint
+    const looksLikeDocument =
+      mimeType.includes("pdf") ||
+      mimeType.includes("word") ||
+      mimeType === "application/msword" ||
+      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      mimeType === "text/html" ||
+      originalName.endsWith(".pdf") ||
+      originalName.endsWith(".doc") ||
+      originalName.endsWith(".docx") ||
+      originalName.endsWith(".html") ||
+      originalName.endsWith(".htm");
+
+    if (looksLikeDocument) {
+      console.warn(`⚠️  Document file uploaded to /ingest/csv: ${originalName} (${mimeType})`);
+      return res.status(400).json({
+        message:
+          "This appears to be a document file (PDF/Word/HTML). " +
+          "Please use the Document Upload tab, which calls /api/ingest/docs."
+      });
+    }
+
+    // Allow only CSV-ish mime types here
+    const allowedCsvMimes = [
+      "text/csv",
+      "application/vnd.ms-excel",
+      "application/csv",
+      "text/plain"
+    ];
+
+    if (!allowedCsvMimes.includes(mimeType) && !originalName.endsWith(".csv")) {
+      console.warn(`⚠️  Non-CSV file type uploaded to /ingest/csv: ${originalName} (${mimeType})`);
+      return res.status(400).json({
+        message:
+          "Unsupported file type for CSV upload. Please upload a .csv file " +
+          "or use the Document Upload tab for PDFs and documents."
+      });
+    }
+
+    const { audience = "public", sourceId = uuidv4(), department = "" } = req.body;
     
     // Create ingestion job
     const job = new IngestionJob({
@@ -284,10 +333,52 @@ router.post("/csv", upload.single("file"), async (req, res) => {
   }
 });
 
-// Document Ingestion Route
+// Document Ingestion Route (PDF / DOC / DOCX / TXT / HTML)
 router.post("/docs", upload.single("file"), async (req, res) => {
   try {
+    // Basic file presence check
+    if (!req.file) {
+      return res.status(400).json({
+        message: "No file uploaded. Please select a document (PDF, Word, Text, HTML)."
+      });
+    }
+
     const { audience = "public", sourceId = uuidv4(), department = "", url = "" } = req.body;
+
+    const mimeType = req.file.mimetype || "";
+    const originalName = (req.file.originalname || "").toLowerCase();
+
+    // Allowed document types for RAG
+    const allowedDocMimes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+      "text/html"
+    ];
+
+    const looksLikeCsv =
+      mimeType === "text/csv" ||
+      mimeType === "application/csv" ||
+      mimeType === "application/vnd.ms-excel" ||
+      originalName.endsWith(".csv");
+
+    if (looksLikeCsv) {
+      console.warn(`⚠️  CSV file uploaded to /ingest/docs: ${originalName} (${mimeType})`);
+      return res.status(400).json({
+        message:
+          "This appears to be a CSV file. Please use the CSV Q&A Upload tab, " +
+          "which calls /api/ingest/csv."
+      });
+    }
+
+    if (!allowedDocMimes.includes(mimeType)) {
+      console.warn(`⚠️  Unsupported document MIME type for /ingest/docs: ${originalName} (${mimeType})`);
+      return res.status(400).json({
+        message:
+          "Unsupported document type. Please upload PDF, Word (DOC/DOCX), plain text, or HTML files."
+      });
+    }
     
     // STEP 9: Get next version for this sourceId
     const version = await getNextVersion(sourceId, "doc");
@@ -326,7 +417,17 @@ router.post("/docs", upload.single("file"), async (req, res) => {
     job.status = "processing";
     await job.save();
     
-    // Extract, clean, and chunk the document
+    // STEP 1: Store raw document file (source of truth)
+    const rawStorageDir = path.join(__dirname, '../../storage/raw/docs');
+    if (!fs.existsSync(rawStorageDir)) {
+      fs.mkdirSync(rawStorageDir, { recursive: true });
+    }
+    const safeName = originalName.replace(/[^a-z0-9.\-_]/g, '_');
+    const rawFilePath = path.join(rawStorageDir, `${sourceId}-${safeName}`);
+    fs.writeFileSync(rawFilePath, req.file.buffer);
+    console.log(`💾 Raw document file stored at: ${rawFilePath}`);
+
+    // STEP 2: Extract, clean, and chunk the document
     const { chunks, metadata } = await documentProcessor.processDocument(
       req.file.buffer,
       req.file.mimetype,
@@ -381,7 +482,8 @@ router.post("/docs", upload.single("file"), async (req, res) => {
         // Document structure & navigation (STEP 8)
         title: chunk.title || '',
         url: chunk.url || '',
-        page: chunk.page || null,
+        // Pinecone metadata cannot be null; only include page when it's a valid number
+        page: typeof chunk.page === "number" ? String(chunk.page) : undefined,
         heading_path: chunk.headingPath || '', // STEP 8: Heading hierarchy for context
         
         // Organization & categorization (STEP 8)

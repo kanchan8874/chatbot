@@ -6,10 +6,82 @@
 const QAPair = require("../database/models/QAPair");
 const embeddingService = require("../services/embeddingService");
 const pineconeService = require("../services/pineconeService");
-const { normalizeText, generateQuestionHash } = require('./textProcessing');
+const { normalizeText, generateQuestionHash, hasMeaningfulOverlap } = require('./textProcessing');
 const { detectTopicIntent } = require('./intentDetection');
 
 const INTENT_TO_CANONICAL_QUESTION = require('./intentDetection').INTENT_TO_CANONICAL_QUESTION;
+
+/**
+ * Strong lexical overlap checker for CSV Q&A matching
+ * - Used to ensure we only accept HIGH‑confidence CSV matches
+ * - Requires at least 2 overlapping meaningful tokens
+ * - Prioritizes core semantic keywords (CIN, address, services, etc.)
+ */
+function hasStrongLexicalOverlap(query, candidateQuestion) {
+  if (!query || !candidateQuestion) return false;
+
+  const stopwords = new Set([
+    "what", "is", "are", "the", "a", "an", "of", "for", "in", "on",
+    "and", "or", "to", "about", "this", "that", "does", "do", "you",
+    "me", "my", "your", "please", "tell", "explain", "describe",
+    "how", "can", "could", "would", "should", "when", "where", "why", "who"
+  ]);
+
+  // Core semantic keywords that indicate specific intent
+  // If query contains these, candidate MUST also contain at least one
+  const coreKeywords = [
+    "cin", "number", "corporate", "identification",
+    "registered", "address", "office", "location",
+    "contact", "phone", "email",
+    "founder", "founders", "director", "directors",
+    "services", "core", "strengths", "key",
+    "industries", "sectors", "clients"
+  ];
+
+  const normalizeTokens = (text) =>
+    normalizeText(text)
+      .split(" ")
+      .filter((t) => t && !stopwords.has(t));
+
+  const queryTokens = new Set(normalizeTokens(query));
+  const candidateTokens = new Set(normalizeTokens(candidateQuestion));
+
+  if (queryTokens.size === 0 || candidateTokens.size === 0) return false;
+
+  // Check for core keyword matches
+  const queryCoreKeywords = coreKeywords.filter(kw => 
+    normalizeText(query).includes(kw)
+  );
+  
+  // If query has core keywords, candidate MUST contain at least one
+  if (queryCoreKeywords.length > 0) {
+    const candidateHasCoreKeyword = queryCoreKeywords.some(kw =>
+      normalizeText(candidateQuestion).includes(kw)
+    );
+    
+    if (!candidateHasCoreKeyword) {
+      // Query asks about something specific (CIN, address, etc.) but candidate doesn't mention it
+      console.log(
+        `⚠️  CSV match rejected: Query has core keywords [${queryCoreKeywords.join(", ")}] ` +
+        `but candidate doesn't contain any. Candidate: "${candidateQuestion.substring(0, 60)}..."`
+      );
+      return false;
+    }
+  }
+
+  // Count overlapping tokens
+  let overlapCount = 0;
+  for (const t of queryTokens) {
+    if (candidateTokens.has(t)) {
+      overlapCount++;
+    }
+  }
+
+  // Require at least 2 overlapping meaningful tokens for HIGH confidence
+  // If query has core keywords, require at least 3 overlaps for extra strictness
+  const minOverlap = queryCoreKeywords.length > 0 ? 3 : 2;
+  return overlapCount >= minOverlap;
+}
 
 /**
  * Search CSV Q&A using semantic matching in Pinecone "qa" namespace
@@ -35,12 +107,27 @@ async function searchCSVQA(query, audience) {
       filter
     );
     
-    if (matches.length > 0 && matches[0].score > 0.75) {
+    // STRICT CSV MATCHING:
+    // - Require reasonably high similarity score
+    // - AND require lexical overlap between user query and stored question
+    if (matches.length > 0 && matches[0].score >= 0.82) {
       const bestMatch = matches[0];
-      console.log(`✅ Found CSV Q&A match with score: ${bestMatch.score}`);
+      const candidateQuestion = bestMatch.metadata?.question || '';
+
+      const strongOverlap = hasStrongLexicalOverlap(query, candidateQuestion);
+
+      if (!strongOverlap) {
+        console.log(
+          `⚠️  CSV semantic match rejected due to weak lexical overlap. ` +
+          `Score: ${bestMatch.score}, Question: "${candidateQuestion.substring(0, 80)}..."`
+        );
+        return null;
+      }
+
+      console.log(`✅ Accepted CSV Q&A match (high confidence). Score: ${bestMatch.score}`);
       
       return {
-        question: bestMatch.metadata?.question || '',
+        question: candidateQuestion,
         answer: bestMatch.metadata?.answer || '',
         score: bestMatch.score,
         sourceId: bestMatch.metadata?.source_id || ''
@@ -48,7 +135,7 @@ async function searchCSVQA(query, audience) {
     }
     
     if (matches.length > 0) {
-      console.log(`⚠️  CSV Q&A match found but score too low: ${matches[0].score} (threshold: 0.75)`);
+      console.log(`⚠️  CSV Q&A semantic match found but rejected. Top score: ${matches[0].score} (threshold: 0.82)`);
     }
     
     return null;
@@ -67,7 +154,10 @@ async function searchDocuments(query, audience, namespace) {
     const queryEmbedding = await embeddingService.generateEmbedding(query, 'search_query');
     
     const filter = {
-      audience: audience === 'employee' ? { $in: ['public', 'employee'] } : 'public'
+      // ROLE‑AWARE DOCUMENT ACCESS
+      audience: audience === 'employee'
+        ? { $in: ['public', 'employee'] }
+        : 'public'
     };
     
     console.log(`📊 Querying Pinecone namespace "${namespace}" with filter:`, filter);
@@ -241,7 +331,7 @@ async function searchMongoDBByKeywords(normalizedMessage, audienceFilter, option
     }
   }
   
-  // PRIORITY 2: General keyword search
+  // PRIORITY 2: General keyword search (STRICT)
   const keywordQueries = [];
   
   if (words.length > 1) {
@@ -276,11 +366,24 @@ async function searchMongoDBByKeywords(normalizedMessage, audienceFilter, option
     });
     
     if (qaPair) {
-      console.log(`✅ Found Q&A match via keyword search: "${qaPair.question.substring(0, 60)}..."`);
+      // STRICT CSV MATCHING for keyword search:
+      // - Require strong lexical overlap between user query and stored question
+      const strongOverlap = hasStrongLexicalOverlap(normalizedMessage, qaPair.question || qaPair.normalizedQuestion || "");
+      if (!strongOverlap) {
+        console.log(
+          `⚠️  Keyword-based CSV match rejected due to weak lexical overlap. ` +
+          `Question: "${qaPair.question.substring(0, 80)}..."`
+        );
+        // Continue searching other candidates
+        continue;
+      }
+
+      console.log(`✅ Accepted Q&A match via keyword search (high confidence): "${qaPair.question.substring(0, 60)}..."`);
       return qaPair;
     }
   }
   
+  // No high-confidence CSV match found
   return null;
 }
 

@@ -57,10 +57,16 @@ async function handleEmployeeQuery(message, normalizedMessage, userRole, audienc
   if (hasHRKeywords) {
     console.log(`🔍 HR keywords detected, searching MongoDB for employee Q&A...`);
     
-    // Try exact match
+    // IMPORTANT:
+    // HR answers must come ONLY from employee-scoped HR data,
+    // do not mix with public/company marketing CSVs.
+    // Therefore we always restrict audience strictly to "employee" here.
+    // Public users should not see these answers at all (RBAC is enforced in controller).
+    
+    // Try exact match (employee audience only)
     let qaPair = await QAPair.findOne({ 
       normalizedQuestion: normalizedMessage,
-      audience: { $in: ["employee", "public"] }
+      audience: "employee"
     });
     
     // Try hash-based match
@@ -68,7 +74,7 @@ async function handleEmployeeQuery(message, normalizedMessage, userRole, audienc
       const questionHash = generateQuestionHash(normalizedMessage);
       qaPair = await QAPair.findOne({ 
         questionHash: questionHash,
-        audience: { $in: ["employee", "public"] }
+        audience: "employee"
       });
     }
     
@@ -81,7 +87,7 @@ async function handleEmployeeQuery(message, normalizedMessage, userRole, audienc
             { normalizedQuestion: { $regex: keywords[0], $options: "i" } },
             { question: { $regex: keywords[0], $options: "i" } }
           ],
-          audience: { $in: ["employee", "public"] }
+          audience: "employee"
         });
       }
     }

@@ -29,7 +29,7 @@ class EmbeddingService {
     
     // Initialize OpenAI (Priority 2 - fallback)
     if (!config.openai.apiKey) {
-      console.warn("⚠️  OpenAI API key not found. Will use Cohere or mock embeddings.");
+     
       this.openaiClient = null;
     } else {
       this.openaiClient = new OpenAI({
@@ -76,7 +76,7 @@ class EmbeddingService {
         return embedding;
       } catch (error) {
         console.error("❌ Cohere embedding error:", error.message);
-        console.warn("⚠️  Falling back to OpenAI or mock...");
+       
         // Fall through to OpenAI or mock
       }
     }
@@ -95,7 +95,7 @@ class EmbeddingService {
         return embedding;
       } catch (error) {
         console.error("❌ OpenAI embedding error:", error.message);
-        console.warn("⚠️  Falling back to mock embeddings...");
+       
       }
     }
 
@@ -161,6 +161,8 @@ class EmbeddingService {
         }
 
         const allEmbeddings = [];
+        // For batch mode we always treat these as documents by default
+        const inputType = 'search_document';
         
         for (let i = 0; i < batches.length; i++) {
           const batch = batches[i];

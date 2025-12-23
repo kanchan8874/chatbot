@@ -1,11 +1,3 @@
-/**
- * Refactored Chat Controller
- * Main orchestrator that routes queries to appropriate handlers
- * 
- * This file has been refactored from 2311 lines to ~300 lines
- * by splitting functionality into modular handlers and utilities
- */
-
 const QAPair = require("../database/models/QAPair");
 
 // Import utilities

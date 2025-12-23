@@ -34,69 +34,58 @@ async function generateLLMResponse(question, context, userRole) {
  * Handle client/general queries
  */
 async function handleClientQuery(message, normalizedMessage, userRole, audienceFilter) {
-  // Detect topic intent
+  // 1) Detect topic intent and build canonical CSV question
   const topicIntent = detectTopicIntent(normalizedMessage);
-  
-  // Get canonical question
   const canonicalNormalizedQuestion =
     (topicIntent && INTENT_TO_CANONICAL_QUESTION[topicIntent]) ||
     normalizedMessage;
   
-  const normalizedQuestion = canonicalNormalizedQuestion;
-  const questionHash = generateQuestionHash(normalizedQuestion);
-  
-  // Try exact match first
+  // 2) STRICT CSV MATCHING (HIGH‑CONFIDENCE ONLY)
+  // 2.1 Exact/hash match in MongoDB
   let qaPair = await searchMongoDBQA(normalizedMessage, audienceFilter, userRole, message);
   
-  // If exact match fails, try keyword-based fuzzy search
-  if (!qaPair) {
-    console.log("⚠️  Exact match failed, trying keyword-based fuzzy search in MongoDB...");
-    qaPair = await searchMongoDBByKeywords(normalizedMessage, audienceFilter, {
-      skipFAQCheck: false,
-      prioritizeFounder: true
-    });
-  }
-  
   if (qaPair) {
+    console.log(`✅ Using exact/hash CSV Q&A match: "${qaPair.question.substring(0, 60)}..."`);
     return {
       response: qaPair.answer,
       context: { type: "qa", answer: qaPair.answer }
     };
   }
   
-  // Try semantic search in Pinecone
-  console.log("⚠️  Exact match not found, trying semantic search in Pinecone 'qa' namespace...");
+  // 2.2 High-confidence semantic CSV match in Pinecone ("qa" namespace)
+  console.log("⚠️  Exact match not found, trying semantic CSV Q&A search in Pinecone 'qa' namespace...");
   const semanticQA = await searchCSVQA(canonicalNormalizedQuestion, userRole);
   
   if (
     semanticQA &&
-    semanticQA.score > 0.8 &&
+    semanticQA.score &&
+    semanticQA.score >= 0.82 &&
     hasMeaningfulOverlap(message, semanticQA.question)
   ) {
-    console.log(`✅ Using semantic CSV Q&A match with score: ${semanticQA.score}`);
+    console.log(`✅ Using HIGH‑confidence semantic CSV Q&A match with score: ${semanticQA.score}`);
     return {
       response: semanticQA.answer,
       context: { type: "qa", answer: semanticQA.answer }
     };
   }
   
-  // Try MongoDB keyword search as fallback
-  console.log("⚠️  Pinecone search failed, trying MongoDB keyword search as fallback...");
-  const fallbackQAPair = await searchMongoDBByKeywords(normalizedMessage, audienceFilter, {
+  // 2.3 STRICT keyword-based search as last CSV attempt
+  console.log("⚠️  No high-confidence semantic CSV match, trying STRICT keyword-based CSV search...");
+  qaPair = await searchMongoDBByKeywords(normalizedMessage, audienceFilter, {
     skipFAQCheck: false,
     prioritizeFounder: true
   });
   
-  if (fallbackQAPair) {
-    console.log(`✅ Found Q&A via MongoDB keyword fallback: "${fallbackQAPair.question.substring(0, 60)}..."`);
+  if (qaPair) {
+    console.log(`✅ Using STRICT keyword-based CSV match: "${qaPair.question.substring(0, 60)}..."`);
     return {
-      response: fallbackQAPair.answer,
-      context: { type: "qa", answer: fallbackQAPair.answer, source: "mongodb_keyword_fallback" }
+      response: qaPair.answer,
+      context: { type: "qa", answer: qaPair.answer }
     };
   }
   
-  // Fall back to document RAG search
-  console.log("⚠️  No reliable CSV Q&A match found, falling back to document RAG...");
+  // 3) CSV FAILED → DOCUMENT RAG
+  console.log("⚠️  No high-confidence CSV Q&A match found, falling back to document RAG...");
   const chunks = await searchDocuments(
     message,
     userRole,
