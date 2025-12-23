@@ -2,12 +2,7 @@ const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "mobiloitte_chatbot_secret_key";
 
-/**
- * Optional auth:
- * - If Authorization: Bearer <token> present ⇒ verify and attach req.user
- * - If missing/invalid ⇒ continue as anonymous client (no hard error)
- *   (useful for public client chatbot access)
- */
+
 function authenticateOptional(req, res, next) {
   const authHeader = req.headers.authorization || req.headers.Authorization;
   if (!authHeader || !authHeader.toString().startsWith("Bearer ")) {

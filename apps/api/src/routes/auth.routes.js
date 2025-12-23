@@ -6,9 +6,7 @@ const router = express.Router();
 // Secret key for JWT (in production, use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET || "mobiloitte_chatbot_secret_key";
 
-// Static demo users (3 fixed accounts as per PRD roles)
-// NOTE: Passwords are plain-text ONLY for this demo environment.
-// Do NOT use this approach in production.
+
 const STATIC_USERS = [
   {
     id: "1",
