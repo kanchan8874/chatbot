@@ -11,6 +11,23 @@ const llmService = require("../services/llmService");
 const freeLLMService = require("../services/freeLLMService");
 
 /**
+ * Translate response based on detected language
+ * For non-English queries, we want to translate the English-based CSV answer
+ */
+function translateResponseIfNeeded(response, detectedLanguage = 'und') {
+  // If language is English or undefined, return as is
+  if (detectedLanguage === 'eng' || detectedLanguage === 'und' || !detectedLanguage) {
+    return response;
+  }
+  
+  // For non-English queries, we'll keep the same content but make it more conversational
+  // In a real implementation, this would call a translation API
+  // For now, we'll return the original response but with a note that it's in English
+  // A proper solution would integrate with translation services
+  return response; // For now, return as is, but in a real implementation we would translate
+}
+
+/**
  * Generate LLM response
  */
 async function generateLLMResponse(question, context, userRole) {

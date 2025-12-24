@@ -160,13 +160,27 @@ router.post("/csv", upload.single("file"), async (req, res) => {
 
     const { audience = "public", sourceId = uuidv4(), department = "" } = req.body;
     
+    // STEP 9: Get next version for this sourceId
+    const version = await getNextVersion(sourceId, "csv");
+    console.log(`📌 Using version: ${version} for sourceId: ${sourceId}`);
+    
+    // STEP 9: If this is a reindex (version > v1), delete old vectors first
+    if (version !== "v1") {
+      const oldVersion = `v${parseInt(version.replace('v', '')) - 1}`;
+      await deleteOldVectors(sourceId, oldVersion, "qa");
+      
+      // Delete old QA pairs from MongoDB
+      await QAPair.deleteMany({ sourceId });
+      console.log(`🗑️  Deleted old MongoDB QA pairs for sourceId: ${sourceId}`);
+    }
+    
     // Create ingestion job
     const job = new IngestionJob({
       sourceId,
       sourceType: "csv",
       audience,
       status: "queued",
-      version: "v1",
+      version: version, // Use calculated version
       metadata: {
         fileName: req.file?.originalname,
         fileSize: req.file?.size,
@@ -278,6 +292,7 @@ router.post("/csv", upload.single("file"), async (req, res) => {
         answer: qaPair.answer,
         source_id: sourceId,
         source_type: 'csv',
+        version: version, // STEP 9: Version tracking
         audience: qaPair.audience,
         question_hash: qaPair.questionHash,
         normalized_question: qaPair.normalizedQuestion,

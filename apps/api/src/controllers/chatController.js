@@ -42,13 +42,13 @@ async function getEmployeeData(employeeId, queryType) {
 /**
  * Generate LLM response
  */
-async function generateLLMResponse(question, context, userRole) {
+async function generateLLMResponse(question, context, userRole, detectedLanguage = 'und') {
   try {
     if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim() !== '') {
-      return await llmService.generateResponse(question, context, userRole);
+      return await llmService.generateResponse(question, context, userRole, detectedLanguage);
     } else {
       console.log("📝 Using free Groq LLM service...");
-      return await freeLLMService.generateResponse(question, context, userRole);
+      return await freeLLMService.generateResponse(question, context, userRole, detectedLanguage);
     }
   } catch (error) {
     console.error("❌ Error generating LLM response:", error.message);
@@ -172,7 +172,7 @@ async function handleMessage(req, res) {
         } else {
           const employeeData = await getEmployeeData(employeeId, "leave_balance");
           context = { type: "employee_data", data: employeeData };
-          response = await generateLLMResponse(message, context);
+          response = await generateLLMResponse(message, context, userRole, detectedLanguage);
         }
         break;
         
@@ -254,6 +254,14 @@ async function handleMessage(req, res) {
         const clientResult = await handleClientQuery(message, normalizedMessage, userRole, audienceFilter);
         response = clientResult.response;
         context = clientResult.context;
+        
+        // Apply language-specific transformation if needed
+        if (detectedLanguage !== 'eng' && detectedLanguage !== 'und') {
+          // For non-English queries, we could apply language transformation here
+          // For now, keeping the same response but in a real implementation
+          // we would translate the response to match the input language
+        }
+        
         break;
         
       case "document_rag":
@@ -280,45 +288,64 @@ async function handleMessage(req, res) {
           }
         }
         
-        // Proceed with document RAG
-        let namespace = "public_docs";
-        if (userRole === "admin") {
-          namespace = "employee_docs";
-        } else if (userRole === "employee") {
-          namespace = "employee_docs";
-        }
-        
-        const chunks = await searchDocuments(message, userRole, namespace);
-        const goodChunks = chunks && chunks.length > 0 && chunks[0].score > 0.5 
-          ? chunks.filter(chunk => chunk.score > 0.5)
-          : [];
-        
-        if (goodChunks.length > 0) {
-          context = { type: "document", chunks: goodChunks };
-          response = await generateLLMResponse(message, context, userRole);
+        // Check if this is a job-related query
+        if (isJobRelatedQuery(message)) {
+          // Try to find job-related information in documents
+          let namespace = "public_docs";
+          if (userRole === "admin") {
+            namespace = "employee_docs";
+          } else if (userRole === "employee") {
+            namespace = "employee_docs";
+          }
+          
+          const chunks = await searchDocuments(message, userRole, namespace);
+          const jobResponse = generateJobResponse(chunks);
+          response = jobResponse.response;
+          context = { type: "job_info", isJobAvailable: jobResponse.isJobAvailable, chunks: chunks };
         } else {
-          // Fallback for employee users
-          if (userRole === "employee") {
-            const finalHRIntent = detectHRIntent(normalizeText(message));
-            if (finalHRIntent && HR_INTENT_TO_ANSWER[finalHRIntent]) {
-              response = HR_INTENT_TO_ANSWER[finalHRIntent];
-              context = { type: "qa", answer: response, audience: "employee", hrIntent: finalHRIntent, source: "hardcoded_document_fallback" };
-            } else {
-              response = HR_INTENT_TO_ANSWER["hr_helpdesk"];
-              context = { type: "qa", answer: response, audience: "employee", hrIntent: "hr_helpdesk", source: "hardcoded_document_last_resort" };
-            }
-          } else if (userRole === "admin") {
-            const finalAdminIntent = detectAdminIntent(normalizeText(message));
-            if (finalAdminIntent && ADMIN_INTENT_TO_ANSWER[finalAdminIntent]) {
-              response = ADMIN_INTENT_TO_ANSWER[finalAdminIntent];
-              context = { type: "qa", answer: response, audience: "admin", adminIntent: finalAdminIntent, source: "hardcoded_document_fallback" };
-            } else {
-              response = ADMIN_INTENT_TO_ANSWER["admin_knowledge"];
-              context = { type: "qa", answer: response, audience: "admin", adminIntent: "admin_knowledge", source: "hardcoded_document_last_resort" };
-            }
+          // Proceed with document RAG for non-job queries
+          let namespace = "public_docs";
+          if (userRole === "admin") {
+            namespace = "employee_docs";
+          } else if (userRole === "employee") {
+            namespace = "employee_docs";
+          }
+          
+          const chunks = await searchDocuments(message, userRole, namespace);
+          
+          // Use adaptive threshold based on query type and context
+          const threshold = isFAQQuery(normalizeText(message)) ? 0.4 : 0.5; // Lower threshold for FAQ-like queries
+          const goodChunks = chunks && chunks.length > 0 && chunks[0].score > threshold 
+            ? chunks.filter(chunk => chunk.score > threshold)
+            : [];
+          
+          if (goodChunks.length > 0) {
+            context = { type: "document", chunks: goodChunks };
+            response = await generateLLMResponse(message, context, userRole, detectedLanguage);
           } else {
-            response = "I couldn't find this information in our knowledge base. Could you rephrase your question or ask about Mobiloitte's services, AI solutions, or company information?";
-            context = { type: "no_data_found" };
+            // Fallback for employee users
+            if (userRole === "employee") {
+              const finalHRIntent = detectHRIntent(normalizeText(message));
+              if (finalHRIntent && HR_INTENT_TO_ANSWER[finalHRIntent]) {
+                response = HR_INTENT_TO_ANSWER[finalHRIntent];
+                context = { type: "qa", answer: response, audience: "employee", hrIntent: finalHRIntent, source: "hardcoded_document_fallback" };
+              } else {
+                response = HR_INTENT_TO_ANSWER["hr_helpdesk"];
+                context = { type: "qa", answer: response, audience: "employee", hrIntent: "hr_helpdesk", source: "hardcoded_document_last_resort" };
+              }
+            } else if (userRole === "admin") {
+              const finalAdminIntent = detectAdminIntent(normalizeText(message));
+              if (finalAdminIntent && ADMIN_INTENT_TO_ANSWER[finalAdminIntent]) {
+                response = ADMIN_INTENT_TO_ANSWER[finalAdminIntent];
+                context = { type: "qa", answer: response, audience: "admin", adminIntent: finalAdminIntent, source: "hardcoded_document_fallback" };
+              } else {
+                response = ADMIN_INTENT_TO_ANSWER["admin_knowledge"];
+                context = { type: "qa", answer: response, audience: "admin", adminIntent: "admin_knowledge", source: "hardcoded_document_last_resort" };
+              }
+            } else {
+              response = "I couldn't find this information in our knowledge base. Could you rephrase your question or ask about Mobiloitte's services, AI solutions, or company information?";
+              context = { type: "no_data_found" };
+            }
           }
         }
         break;
@@ -356,3 +383,50 @@ async function handleMessage(req, res) {
 module.exports = {
   handleMessage
 };
+
+/**
+ * Detect if query is job-related
+ */
+function isJobRelatedQuery(message) {
+  const jobKeywords = [
+    'job', 'jobs', 'career', 'careers', 'employment', 'vacancy', 'vacancies', 
+    'hiring', 'hire', 'recruit', 'recruitment', 'position', 'positions',
+    'opening', 'openings', 'apply', 'application', 'applications',
+    'work', 'working', 'employee', 'employees', 'intern', 'internship'
+  ];
+  
+  const normalizedMessage = normalizeText(message).toLowerCase();
+  return jobKeywords.some(keyword => normalizedMessage.includes(keyword));
+}
+
+/**
+ * Generate job-related response based on document search results
+ */
+function generateJobResponse(chunks) {
+  if (!chunks || chunks.length === 0) {
+    return {
+      response: "Currently there are no job openings available at Mobiloitte. Please check our careers page or contact our HR team for future opportunities.",
+      isJobAvailable: false
+    };
+  }
+  
+  // Check if any chunk contains positive job-related information
+  const hasJobInfo = chunks.some(chunk => 
+    chunk.text.toLowerCase().includes('job') || 
+    chunk.text.toLowerCase().includes('career') || 
+    chunk.text.toLowerCase().includes('opening') ||
+    chunk.text.toLowerCase().includes('hiring')
+  );
+  
+  if (hasJobInfo) {
+    return {
+      response: "Yes, there are job opportunities available at Mobiloitte. Please contact our HR team or check our careers page for current openings.",
+      isJobAvailable: true
+    };
+  } else {
+    return {
+      response: "Currently there are no job openings available at Mobiloitte. Please check our careers page or contact our HR team for future opportunities.",
+      isJobAvailable: false
+    };
+  }
+}

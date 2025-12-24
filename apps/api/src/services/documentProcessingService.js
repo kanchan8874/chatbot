@@ -180,47 +180,102 @@ class DocumentProcessingService {
    */
   chunkText(text, options = {}) {
     const {
-      chunkSize = 300,
+      chunkSize = 500, // Increased default chunk size
       overlap = 50,
       separator = '\n\n'
     } = options;
 
     if (!text) return [];
 
-    // Split by paragraphs first
+    // First try to split by the provided separator
     let chunks = [];
     const paragraphs = text.split(separator).filter(p => p.trim().length > 0);
 
-    // Combine paragraphs into chunks
-    let currentChunk = '';
-    let currentLength = 0;
+    // If the separator didn't work well (e.g., single large block of text),
+    // fallback to word-based chunking
+    if (paragraphs.length <= 1) {
+      // Split text into words
+      const words = text.split(/\s+/);
+      
+      if (words.length <= chunkSize) {
+        // If text is smaller than chunk size, return as single chunk
+        return [text.trim()];
+      }
+      
+      // Split into word-based chunks
+      for (let i = 0; i < words.length; i += (chunkSize - overlap)) {
+        const chunkWords = words.slice(i, i + chunkSize);
+        chunks.push(chunkWords.join(' '));
+      }
+    } else {
+      // Combine paragraphs into chunks (original logic)
+      let currentChunk = '';
+      let currentLength = 0;
 
-    for (const paragraph of paragraphs) {
-      const paraLength = paragraph.split(/\s+/).length;
+      for (const paragraph of paragraphs) {
+        const paraLength = paragraph.split(/\s+/).length;
 
-      // If adding this paragraph would exceed chunk size, save current chunk
-      if (currentLength + paraLength > chunkSize && currentChunk) {
-        chunks.push(currentChunk.trim());
-        // Reset with overlap
-        currentChunk = '';
-        currentLength = 0;
+        // If adding this paragraph would exceed chunk size, save current chunk
+        if (currentLength + paraLength > chunkSize && currentChunk) {
+          chunks.push(currentChunk.trim());
+          // Include overlap from the current paragraph if it's large enough
+          if (overlap > 0 && paraLength > overlap) {
+            const overlapWords = paragraph.split(/\s+/).slice(0, overlap).join(' ');
+            currentChunk = overlapWords;
+            currentLength = overlap;
+          } else {
+            currentChunk = '';
+            currentLength = 0;
+          }
+        }
+
+        // Add paragraph to current chunk
+        if (currentChunk) {
+          currentChunk += separator + paragraph;
+        } else {
+          currentChunk = paragraph;
+        }
+        currentLength += paraLength;
       }
 
-      // Add paragraph to current chunk
+      // Add the last chunk if it exists
       if (currentChunk) {
-        currentChunk += separator + paragraph;
-      } else {
-        currentChunk = paragraph;
+        chunks.push(currentChunk.trim());
       }
-      currentLength += paraLength;
-    }
-
-    // Add the last chunk if it exists
-    if (currentChunk) {
-      chunks.push(currentChunk.trim());
     }
 
     return chunks;
+  }
+  
+  /**
+   * Helper function to calculate approximate position of a chunk in the full text
+   * @param {string} fullText - The full text
+   * @param {string} chunkText - The chunk text
+   * @returns {number} Approximate word position of the chunk in the full text
+   */
+  calculateTextPosition(fullText, chunkText) {
+    const fullWords = fullText.split(/\s+/);
+    const chunkWords = chunkText.split(/\s+/);
+    
+    if (chunkWords.length === 0) return 0;
+    
+    // Find the first occurrence of the chunk words in the full text
+    for (let i = 0; i <= fullWords.length - chunkWords.length; i++) {
+      let match = true;
+      for (let j = 0; j < chunkWords.length; j++) {
+        if (fullWords[i + j].toLowerCase() !== chunkWords[j].toLowerCase()) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        return i + Math.floor(chunkWords.length / 2); // Return position at the middle of the matched chunk
+      }
+    }
+    
+    // If exact match not found, return approximate position based on index
+    // This is a fallback when the chunk doesn't exactly match text in the original
+    return 0;
   }
 
   /**
@@ -243,18 +298,36 @@ class DocumentProcessingService {
       const textChunks = this.chunkText(cleanedText, chunkOptions);
       
       // Step 4: Create chunk objects with metadata
-      const chunks = textChunks.map((chunkText, index) => ({
-        chunkId: `${filename}-chunk-${index}`,
-        chunkText: chunkText,
-        sourceId: filename,
-        position: index,
-        wordCount: chunkText.split(/\s+/).length,
-        metadata: {
-          ...metadata,
-          chunkIndex: index,
-          totalChunks: textChunks.length
+      // For PDFs, try to estimate page numbers based on content distribution
+      const chunks = textChunks.map((chunkText, index) => {
+        let estimatedPage = null;
+        
+        // If this is a PDF and we have page count info, estimate page number
+        if (mimeType === 'application/pdf' && metadata.pageCount && metadata.pageCount > 0) {
+          // Calculate approximate page based on position in total text
+          const totalWords = cleanedText.split(/\s+/).length;
+          if (totalWords > 0) {
+            const chunkWords = chunkText.split(/\s+/).length;
+            const textPosition = this.calculateTextPosition(cleanedText, chunkText);
+            const positionRatio = textPosition / totalWords;
+            estimatedPage = Math.max(1, Math.min(metadata.pageCount, Math.floor(positionRatio * metadata.pageCount) + 1));
+          }
         }
-      }));
+        
+        return {
+          chunkId: `${filename}-chunk-${index}`,
+          chunkText: chunkText,
+          sourceId: filename,
+          position: index,
+          wordCount: chunkText.split(/\s+/).length,
+          page: estimatedPage,
+          metadata: {
+            ...metadata,
+            chunkIndex: index,
+            totalChunks: textChunks.length
+          }
+        };
+      });
 
       return { chunks, metadata };
     } catch (error) {

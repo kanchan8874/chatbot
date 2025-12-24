@@ -6,7 +6,7 @@
 const QAPair = require("../database/models/QAPair");
 const embeddingService = require("../services/embeddingService");
 const pineconeService = require("../services/pineconeService");
-const { normalizeText, generateQuestionHash, hasMeaningfulOverlap } = require('./textProcessing');
+const { normalizeText, generateQuestionHash, hasMeaningfulOverlap, getExpandedTokens } = require('./textProcessing');
 const { detectTopicIntent } = require('./intentDetection');
 
 const INTENT_TO_CANONICAL_QUESTION = require('./intentDetection').INTENT_TO_CANONICAL_QUESTION;
@@ -43,12 +43,13 @@ function hasStrongLexicalOverlap(query, candidateQuestion) {
       .split(" ")
       .filter((t) => t && !stopwords.has(t));
 
-  const queryTokens = new Set(normalizeTokens(query));
-  const candidateTokens = new Set(normalizeTokens(candidateQuestion));
+  // Get expanded tokens for multilingual matching
+  const queryTokens = new Set(getExpandedTokens(query));
+  const candidateTokens = new Set(getExpandedTokens(candidateQuestion));
 
   if (queryTokens.size === 0 || candidateTokens.size === 0) return false;
 
-  // Check for core keyword matches
+  // Check for core keyword matches using original normalized text
   const queryCoreKeywords = coreKeywords.filter(kw => 
     normalizeText(query).includes(kw)
   );
@@ -107,10 +108,11 @@ async function searchCSVQA(query, audience) {
       filter
     );
     
-    // STRICT CSV MATCHING:
-    // - Require reasonably high similarity score
+    // STRATEGIC CSV MATCHING:
+    // - Use adaptive threshold to balance precision and recall
     // - AND require lexical overlap between user query and stored question
-    if (matches.length > 0 && matches[0].score >= 0.82) {
+    const threshold = audience === 'employee' ? 0.82 : 0.70; // Lower threshold for public queries
+    if (matches.length > 0 && matches[0].score >= threshold) {
       const bestMatch = matches[0];
       const candidateQuestion = bestMatch.metadata?.question || '';
 
@@ -182,7 +184,7 @@ async function searchDocuments(query, audience, namespace) {
     
     console.log(`✅ Retrieved ${chunks.length} chunks from Pinecone (top score: ${chunks[0]?.score || 0})`);
     
-    return chunks.slice(0, 8);
+    return chunks; // Return all chunks and let the controller decide how many to use
   } catch (error) {
     console.error("❌ Error searching Pinecone:", error.message);
     return [];
