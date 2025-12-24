@@ -31,9 +31,99 @@ async function generateLLMResponse(question, context, userRole) {
 }
 
 /**
+ * Check if query is asking for general company information
+ */
+function isCompanyInformationQuery(normalizedMessage, message) {
+  const lowerMessage = normalizedMessage.toLowerCase();
+  const lowerOriginal = message.toLowerCase();
+  
+  // Patterns that indicate "tell me about company" / "company information" queries
+  const companyInfoPatterns = [
+    /(give|provide|tell|share|show).*(information|info|details|about).*(company|mobiloitte)/i,
+    /(mujhe|hame|hume).*(information|info|details|jankari).*(do|de|dijiye).*(company|mobiloitte)/i,
+    /(company|mobiloitte).*(ke|ki|ka).*(bare|baare|about).*(me|mai|information|info)/i,
+    /(information|info|details|jankari).*(about|ke|ki|ka).*(company|mobiloitte)/i,
+    /(tell|explain|describe).*(me|us|about).*(company|mobiloitte)/i,
+  ];
+  
+  return companyInfoPatterns.some(pattern => 
+    pattern.test(lowerMessage) || pattern.test(lowerOriginal)
+  );
+}
+
+/**
+ * Aggregate multiple Q&A pairs for company information
+ */
+async function getCompanyInformationAggregate(audienceFilter) {
+  try {
+    // Fetch top 10-15 general company Q&A pairs
+    const companyQAs = await QAPair.find({
+      audience: audienceFilter,
+      $or: [
+        { question: { $regex: /mobiloitte|company|services|solutions|about/i } },
+        { category: { $in: ['company', 'general', 'overview'] } },
+        { tags: { $in: ['company', 'general', 'overview', 'mobiloitte'] } }
+      ]
+    })
+    .limit(15)
+    .sort({ updatedAt: -1 });
+    
+    if (companyQAs.length === 0) return null;
+    
+    // Group and format the information
+    const infoSections = companyQAs.map(qa => 
+      `**${qa.question}**\n${qa.answer}`
+    ).join('\n\n');
+    
+    return `Here's comprehensive information about Mobiloitte:\n\n${infoSections}`;
+  } catch (error) {
+    console.error("❌ Error aggregating company information:", error.message);
+    return null;
+  }
+}
+
+/**
  * Handle client/general queries
  */
 async function handleClientQuery(message, normalizedMessage, userRole, audienceFilter) {
+  // 0) SPECIAL HANDLER: Company Information Queries
+  // These queries need aggregated responses, not strict matching
+  if (isCompanyInformationQuery(normalizedMessage, message)) {
+    console.log("🔍 Company information query detected - aggregating multiple Q&A pairs...");
+    
+    // Try to get aggregated company information from CSV
+    const aggregatedInfo = await getCompanyInformationAggregate(audienceFilter);
+    if (aggregatedInfo) {
+      console.log("✅ Using aggregated company information from CSV Q&A");
+      return {
+        response: aggregatedInfo,
+        context: { type: "qa_aggregated", source: "company_info" }
+      };
+    }
+    
+    // Fallback to document RAG with lower threshold for company info queries
+    console.log("⚠️  No aggregated CSV found, trying document RAG with relaxed threshold...");
+    const chunks = await searchDocuments(
+      message,
+      userRole,
+      userRole === "employee" ? "employee_docs" : "public_docs"
+    );
+    
+    // Lower threshold (0.3) for company information queries
+    const goodChunks = chunks && chunks.length > 0 && chunks[0].score > 0.3
+      ? chunks.filter((chunk) => chunk.score > 0.3)
+      : [];
+    
+    if (goodChunks.length > 0) {
+      const context = { type: "document", chunks: goodChunks };
+      const response = await generateLLMResponse(message, context, userRole);
+      return {
+        response,
+        context
+      };
+    }
+  }
+  
   // 1) Detect topic intent and build canonical CSV question
   const topicIntent = detectTopicIntent(normalizedMessage);
   const canonicalNormalizedQuestion =
@@ -92,12 +182,23 @@ async function handleClientQuery(message, normalizedMessage, userRole, audienceF
     userRole === "employee" ? "employee_docs" : "public_docs"
   );
   
+  // Use flexible threshold: 0.5 for high confidence, 0.3 for general queries
+  // If top chunk score is between 0.3-0.5, still use it for general company queries
+  const topScore = chunks && chunks.length > 0 ? chunks[0].score : 0;
+  const isGeneralQuery = normalizedMessage.includes("mobiloitte") || 
+                         normalizedMessage.includes("company") ||
+                         normalizedMessage.includes("information") ||
+                         normalizedMessage.includes("about");
+  
+  const threshold = (topScore >= 0.3 && topScore < 0.5 && isGeneralQuery) ? 0.3 : 0.5;
+  
   const goodChunks =
-    chunks && chunks.length > 0 && chunks[0].score > 0.5
-      ? chunks.filter((chunk) => chunk.score > 0.5)
+    chunks && chunks.length > 0 && topScore >= threshold
+      ? chunks.filter((chunk) => chunk.score >= threshold)
       : [];
   
   if (goodChunks.length > 0) {
+    console.log(`✅ Using document RAG with threshold ${threshold} (top score: ${topScore})`);
     const context = { type: "document", chunks: goodChunks };
     const response = await generateLLMResponse(message, context, userRole);
     return {

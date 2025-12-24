@@ -42,18 +42,30 @@ class LLMService {
           // CSV Q&A fast path - direct answer use karo
           systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
 Your role is to answer questions accurately using ONLY the provided information.
-Rules:
-- Answer ONLY from the provided answer below
-- Do NOT add information not in the provided answer
-- Be concise and clear
-- If the answer doesn't fully address the question, say so`;
+
+RESPONSE FORMATTING RULES (CRITICAL):
+1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
+2. Use STRUCTURED format when appropriate:
+   - Start with a brief greeting/context (1 line)
+   - Use bullet points (•) for lists (3-6 items max)
+   - End with a short summary line (1-2 lines)
+3. Break long answers into multiple short sections
+4. Use bullet points instead of long paragraphs
+5. Be conversational, polite, and professional
+6. Answer ONLY from the provided answer below
+7. Do NOT add information not in the provided answer`;
 
           userPrompt = `Question: ${userQuestion}
 
 Provided Answer:
 ${context.answer}
 
-Answer the question using ONLY the provided answer above:`;
+Format your answer as:
+- Short greeting/context (1 line)
+- Bullet points if listing items (• item 1, • item 2, etc.)
+- Brief summary (1-2 lines)
+
+Answer using ONLY the provided answer above:`;
 
           break;
 
@@ -65,19 +77,31 @@ Answer the question using ONLY the provided answer above:`;
 
           systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
 Your role is to answer questions using ONLY the retrieved document chunks below.
-Rules:
-- Answer ONLY using information from the provided chunks
-- If information is not in the chunks, politely suggest rephrasing or asking about Mobiloitte's services
-- Do NOT make up or hallucinate information
-- Cite which source you used (Source 1, Source 2, etc.)
-- Be accurate, helpful, and friendly`;
+
+RESPONSE FORMATTING RULES (CRITICAL):
+1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
+2. Use STRUCTURED format when appropriate:
+   - Start with a brief greeting/context (1 line)
+   - Use bullet points (•) for lists (3-6 items max)
+   - End with a short summary line (1-2 lines)
+3. Break long answers into multiple short sections
+4. Use bullet points instead of long paragraphs
+5. Be conversational, polite, and professional
+6. Answer ONLY using information from the provided chunks
+7. If information is not in the chunks, politely suggest rephrasing or asking about Mobiloitte's services
+8. Do NOT make up or hallucinate information`;
 
           userPrompt = `Question: ${userQuestion}
 
 Retrieved Document Chunks:
 ${chunksText}
 
-Answer the question using ONLY the information from the chunks above. If the answer is not in the chunks, say so clearly:`;
+Format your answer as:
+- Short greeting/context (1 line)
+- Bullet points if listing items (• item 1, • item 2, etc.)
+- Brief summary (1-2 lines)
+
+Answer using ONLY the information from the chunks above. If the answer is not in the chunks, say so clearly:`;
 
           break;
 

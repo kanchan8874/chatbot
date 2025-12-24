@@ -18,6 +18,7 @@ const { hasAdminKeywords, handleAdminQuery } = require("../handlers/adminHandler
 const { hasHRKeywords, handleEmployeeQuery } = require("../handlers/employeeHandler");
 const { handleClientQuery } = require("../handlers/clientHandler");
 const { searchDocuments } = require("../utils/searchUtils");
+const { formatResponseForAPI } = require("../utils/responseFormatter");
 const llmService = require("../services/llmService");
 const freeLLMService = require("../services/freeLLMService");
 
@@ -105,13 +106,14 @@ async function handleMessage(req, res) {
     
     console.log(`👤 User role detected: ${userRole}, Message: "${message.substring(0, 50)}"`);
     
-    // Step 3: Profanity check
-    if (await containsProfanity(message)) {
-      console.log(`⚠️  Profanity detected in message from ${userRole}`);
+    // Step 3: Profanity check (BEFORE any embedding/RAG processing)
+    const hasProfanity = await containsProfanity(message);
+    if (hasProfanity) {
+      console.log(`🚫 Profanity detected in message from ${userRole}: "${message.substring(0, 50)}..."`);
       return res.json({
-        response: "I'm here to help with professional questions about Mobiloitte. Please use appropriate language.",
+        response: "I'm here to assist you with professional questions about Mobiloitte's services, solutions, and company information. Please use respectful and appropriate language so I can help you better.",
         sessionId,
-        context: { type: "profanity_detected" }
+        context: { type: "profanity_detected", language: "und" }
       });
     }
     
@@ -322,9 +324,18 @@ async function handleMessage(req, res) {
         break;
     }
     
-    // Step 10: Return response
+    // Step 10: Format response into structured chunks (Kenyt AI style)
+    const formattedResponse = formatResponseForAPI(response, {
+      maxLinesPerBubble: 5,
+      charsPerLine: 60,
+      enableShowMore: false, // Disabled - removed show more functionality
+      showMoreThreshold: 15,
+    });
+    
     return res.json({
-      response,
+      response: formattedResponse.originalText, // Keep original for backward compatibility
+      formatted: formattedResponse.formatted,
+      chunks: formattedResponse.chunks,
       sessionId,
       context: {
         ...context,

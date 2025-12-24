@@ -65,12 +65,12 @@ function detectConversationalIntent(message) {
 function getConversationalResponse(intent) {
   const responses = {
     greeting: [
-      "Hi! 👋 How can I help you today?",
-      "Hello! Ask me anything about Mobiloitte's services, AI solutions, or company information.",
-      "Hey there! I'm here to help with questions about Mobiloitte. What would you like to know?",
-      "Hi! I can help you learn about our AI development services, company information, and more. What can I help you with?",
-      "I'm doing well, thanks for asking! I can help you with questions about Mobiloitte's services, AI solutions, or company information. What would you like to know?",
-      "I'm great! How can I assist you with Mobiloitte-related questions today?"
+      "Hi! 👋 I am Mobiya ,How can I help you today?",
+      "Hello! 👋 I am Mobiya , Ask me anything about Mobiloitte's services, AI solutions, or company information.",
+      "Hey there! 👋 I am Mobiya , I'm here to help with questions about Mobiloitte. What would you like to know?",
+      "Hi! 👋 I am Mobiya , I can help you learn about our AI development services, company information, and more. What can I help you with?",
+      "Hi 👋 I am Mobiya , I'm doing well, thanks for asking! I can help you with questions about Mobiloitte's services, AI solutions, or company information. What would you like to know?",
+      "Hii 👋 I am Mobiya , I'm great! How can I assist you with Mobiloitte-related questions today?"
     ],
     thanks: [
       "You're welcome! Feel free to ask if you need anything else.",

@@ -8,6 +8,8 @@ const gibberishDetector = require("gibberish-detector");
 // franc and bad-words are ES Modules, so we'll use dynamic import when needed
 let francModule = null;
 let badWordsModule = null;
+let allProfanityModule = null;
+let profanityHindiModule = null;
 
 async function loadFranc() {
   if (!francModule) {
@@ -25,12 +27,48 @@ async function loadBadWords() {
   if (!badWordsModule) {
     try {
       badWordsModule = await import("bad-words");
+      // bad-words v4.0.0 exports Filter as named export
+      if (!badWordsModule.Filter && !badWordsModule.default) {
+        console.warn("⚠️  bad-words module structure unexpected");
+      }
     } catch (error) {
       console.warn("⚠️  Failed to load bad-words module:", error.message);
       return null;
     }
   }
   return badWordsModule;
+}
+
+/**
+ * Load allprofanity package (supports Hindi + Hinglish profanity detection)
+ * This is a specialized library for Hindi/English profanity
+ * NOTE: allprofanity is an ES Module, so we use dynamic import()
+ */
+async function loadAllProfanity() {
+  if (!allProfanityModule) {
+    try {
+      allProfanityModule = await import("allprofanity");
+    } catch (error) {
+      console.warn("⚠️  allprofanity package not installed or failed to load. Run: npm install allprofanity");
+      return null;
+    }
+  }
+  return allProfanityModule;
+}
+
+/**
+ * Load profanity-hindi package (alternative Hindi profanity detector)
+ */
+async function loadProfanityHindi() {
+  if (!profanityHindiModule) {
+    try {
+      profanityHindiModule = require("profanity-hindi");
+    } catch (error) {
+      // This is optional, so we don't warn if it's not installed
+      return null;
+    }
+  }
+  return profanityHindiModule;
 }
 
 /**
@@ -129,28 +167,102 @@ async function detectLanguage(text) {
 }
 
 /**
- * Check if text contains profanity using bad-words library
+ * PROFANITY DETECTION USING THIRD-PARTY LIBRARIES
+ * 
+ * Strategy:
+ * 1. Use allprofanity (specialized for Hindi/Hinglish) - FAST, LOCAL
+ * 2. Use bad-words (English profanity) - FAST, LOCAL
+ * 3. Optional: WebPurify API (fallback for edge cases) - SLOW, API CALL
+ * 
+ * Benefits:
+ * - No hardcoded word lists to maintain
+ * - Automatically updated with library updates
+ * - Supports Hindi + English natively
+ * - Fast (no API calls by default)
  */
 async function containsProfanity(text) {
   if (!text || text.trim().length === 0) return false;
   
+  // STEP 1: Check with bad-words FIRST (English profanity - already installed, most reliable)
+  // This should catch "fuck you" and other English profanity immediately
   try {
     const badWords = await loadBadWords();
-    if (!badWords || !badWords.default) {
-      const commonProfanity = ['damn', 'hell'];
-      const lowerText = text.toLowerCase();
-      return commonProfanity.some(word => lowerText.includes(word));
+    if (badWords) {
+      // bad-words v4.0.0 exports Filter as named export, not default
+      const Filter = badWords.Filter || badWords.default;
+      if (Filter) {
+        const profanityFilter = new Filter();
+        if (profanityFilter.isProfane(text)) {
+          console.log(`🚫 Profanity detected via bad-words: "${text.substring(0, 50)}..."`);
+          return true;
+        }
+      }
     }
-    
-    const Filter = badWords.default;
-    const profanityFilter = new Filter();
-    return profanityFilter.isProfane(text);
   } catch (error) {
-    console.warn(`⚠️  Profanity filter error: ${error.message}`);
-    const commonProfanity = ['damn', 'hell'];
-    const lowerText = text.toLowerCase();
-    return commonProfanity.some(word => lowerText.includes(word));
+    console.warn(`⚠️  bad-words check failed: ${error.message}`);
   }
+  
+  // STEP 2: Check with allprofanity (Hindi + Hinglish support)
+  try {
+    const allProfanity = await loadAllProfanity();
+    if (allProfanity) {
+      // allprofanity exports AllProfanity class as default
+      // API: allProfanity.default.filter.check(text) or allProfanity.AllProfanity.filter.check(text)
+      const AllProfanityClass = allProfanity.default || allProfanity.AllProfanity;
+      
+      if (AllProfanityClass && AllProfanityClass.filter && typeof AllProfanityClass.filter.check === 'function') {
+        const isProfane = AllProfanityClass.filter.check(text);
+        if (isProfane) {
+          console.log(`🚫 Profanity detected via allprofanity: "${text.substring(0, 50)}..."`);
+          return true;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`⚠️  allprofanity check failed: ${error.message}`);
+  }
+  
+  // STEP 3: Check with profanity-hindi (alternative Hindi detector)
+  // NOTE: profanity-hindi uses isMessageDirty() method
+  try {
+    const profanityHindi = await loadProfanityHindi();
+    if (profanityHindi && typeof profanityHindi.isMessageDirty === 'function') {
+      const isProfane = profanityHindi.isMessageDirty(text);
+      if (isProfane) {
+        console.log(`🚫 Profanity detected via profanity-hindi: "${text.substring(0, 50)}..."`);
+        return true;
+      }
+    }
+  } catch (error) {
+    console.warn(`⚠️  profanity-hindi check failed: ${error.message}`);
+  }
+  
+  // STEP 4: Optional - WebPurify API fallback (only if enabled)
+  // Uncomment below if you want to use WebPurify API as fallback
+  /*
+  if (process.env.WEBPURIFY_API_KEY) {
+    try {
+      const axios = require('axios');
+      const response = await axios.get('https://api1.webpurify.com/services/rest/', {
+        params: {
+          api_key: process.env.WEBPURIFY_API_KEY,
+          method: 'webpurify.live.check',
+          text: text,
+          lang: 'hi,en' // Hindi and English
+        }
+      });
+      
+      if (response.data && response.data.rsp && response.data.rsp.found === '1') {
+        console.log(`🚫 Profanity detected via WebPurify API: "${text.substring(0, 50)}..."`);
+        return true;
+      }
+    } catch (error) {
+      console.warn(`⚠️  WebPurify API check failed: ${error.message}`);
+    }
+  }
+  */
+  
+  return false;
 }
 
 module.exports = {
