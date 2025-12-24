@@ -11,6 +11,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [expandedMessages, setExpandedMessages] = useState(new Set()); // Track expanded "Show more" messages
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -126,13 +127,27 @@ export default function ChatbotModal({ isOpen, onClose }) {
 
       const data = await response.json();
 
-      const aiMessage = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        content: data.response,
-      };
-
-      setMessages((prev) => [...prev, aiMessage]);
+      // Handle formatted responses (Kenyt AI style)
+      if (data.formatted && data.chunks && Array.isArray(data.chunks)) {
+        // Create multiple message bubbles from chunks
+        const chunkMessages = data.chunks.map((chunk, index) => ({
+          id: `a-${Date.now()}-${index}`,
+          role: "assistant",
+          content: chunk.content || '',
+          chunkType: chunk.type || 'text',
+          chunkData: chunk, // Store full chunk data for structured rendering
+        }));
+        
+        setMessages((prev) => [...prev, ...chunkMessages]);
+      } else {
+        // Fallback: Single message (backward compatibility)
+        const aiMessage = {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          content: data.response,
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      }
     } catch (error) {
       console.error("Error calling chat API:", error);
       
@@ -226,47 +241,65 @@ export default function ChatbotModal({ isOpen, onClose }) {
         {/* Header - Clean design */}
         <div className="bg-gradient-to-r from-[#FFF0F0] to-[#FFE8E8] px-6 py-4 flex items-center justify-between border-b border-[#FFE5E5]">
           <div className="flex items-center gap-4 min-w-0 flex-1">
-            {/* Avatar - Larger, prominent */}
+            {/* Logo - Using logo1.png */}
             <div className="relative flex-shrink-0">
-              <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#E31E24] to-[#C41E3A] flex items-center justify-center shadow-lg ring-4 ring-white">
-                <svg
-                  className="h-7 w-7 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2.5}
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                  />
-                </svg>
+              <div className="h-16 w-16 flex items-center justify-center   overflow-hidden" style={{ borderRadius: '0' }}>
+                <img
+                  src="/assets/logo1.png"
+                  alt="Mobiloitte AI Logo"
+                  className="h-full w-full object-contain object-center p-2"
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => {
+                    e.target.style.display = "none";
+                    const fallback = e.target.parentElement?.querySelector(".logo-fallback");
+                    if (fallback) {
+                      fallback.style.display = "flex";
+                    }
+                  }}
+                />
+                {/* Fallback SVG if logo fails to load */}
+                <div className="logo-fallback hidden absolute inset-0 h-16 w-16 bg-gradient-to-br from-[#E31E24] to-[#C41E3A] items-center justify-center" style={{ display: "none", borderRadius: '0' }}>
+                  <svg
+                    className="h-8 w-8 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2.5}
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
+                  </svg>
+                </div>
               </div>
             </div>
+            {/* Title Section - Enhanced */}
             <div className="min-w-0 flex-1">
               <h2 id="chatbot-title" className="text-[#E31E24] font-bold text-lg leading-tight truncate">
                 {assistantTitle}
               </h2>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Control Buttons - Enhanced */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             <button
               onClick={() => setIsMinimized(!isMinimized)}
-              className="text-gray-500 hover:text-gray-700 hover:bg-white/60 p-2 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20"
+              className="text-gray-600 hover:text-[#E31E24] hover:bg-white/80 p-2.5 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 active:scale-95"
               aria-label={isMinimized ? "Expand chatbot" : "Minimize chatbot"}
             >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
               </svg>
             </button>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 hover:bg-white/60 p-2 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20"
+              className="text-gray-600 hover:text-[#E31E24] hover:bg-white/80 p-2.5 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 active:scale-95"
               aria-label="Close chatbot"
             >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -280,25 +313,30 @@ export default function ChatbotModal({ isOpen, onClose }) {
               {/* Empty State - Welcome Screen */}
               {messages.length === 0 ? (
                 <div className="space-y-6">
-                  {/* Welcome Message Bubble - Image 3/4 style: Light gray bubble with avatar - Right to Left Animation */}
-                  <div className="bg-[#F8F8F8] rounded-2xl p-5 shadow-sm border border-gray-100 animate-slideInFromRight">
-                    <div className="flex items-start gap-4">
-                      {/* Avatar - Red circle like Image 4 */}
-                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#E31E24] to-[#C41E3A] flex items-center justify-center flex-shrink-0 shadow-sm">
-                        <svg
-                          className="h-6 w-6 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={2.5}
-                          aria-hidden="true"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
+                  {/* Welcome Message Bubble - With Avatar (Image 2 style) */}
+                  <div className="bg-white rounded-2xl rounded-tr-sm p-4 shadow-md border border-gray-200/50 animate-slideInFromRight relative">
+                    {/* Speech Bubble Tail - Left Top */}
+                    <div 
+                      className="absolute -left-1.5 top-0 w-0 h-0"
+                      style={{
+                        borderRight: '8px solid white',
+                        borderTop: '8px solid white',
+                        borderBottom: '8px solid transparent',
+                        borderLeft: '8px solid transparent',
+                      }}
+                    />
+                    <div className="flex items-start gap-3">
+                      {/* Avatar - Using provided image (Image 3) */}
+                      <div className="h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50 flex-shrink-0">
+                        <img
+                          src="/assets/chatbot-avatar.png"
+                          alt="Chatbot Assistant"
+                          className="w-full h-full object-cover"
+                        />
                       </div>
-                      <div className="flex-1 pt-1">
+                      <div className="flex-1">
                         <p className="text-sm text-gray-800 leading-relaxed">
-                          Hi! I'm your Mobiloitte{assistantTitle.toUpperCase()}.What would you like to do today? I’m here to help!
+                          Hi! I'm your Mobiloitte {assistantTitle}. What would you like to do today? I'm here to help!
                         </p>
                         {!isAuthenticated && (
                           <p className="text-xs text-gray-500 mt-2">
@@ -385,53 +423,112 @@ export default function ChatbotModal({ isOpen, onClose }) {
                   </div>
                 </div>
               ) : (
-                /* Chat Messages - Image 2 style: Card-based with icons */
+                /* Chat Messages - WhatsApp Style */
                 <div className="space-y-3 pb-2">
                   {messages.map((msg, index) => (
                     <div
                       key={msg.id}
-                      className={`flex gap-3 animate-fadeIn ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      className={`flex items-start gap-2.5 animate-fadeIn ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                       style={{ animationDelay: `${index * 0.05}s` }}
                     >
+                      {/* Bot Avatar - Using provided image (Image 3) */}
                       {msg.role === "assistant" && (
-                        <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gradient-to-br from-[#E31E24] to-[#C41E3A] flex items-center justify-center shadow-sm" aria-hidden="true">
-                          <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                          </svg>
+                        <div className="flex-shrink-0 h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50" aria-hidden="true">
+                          <img
+                            src="/assets/chatbot-avatar.png"
+                            alt="Chatbot Assistant"
+                            className="w-full h-full object-cover"
+                          />
                         </div>
                       )}
-                      {/* Message Card - Image 2 style: Rounded card with border */}
+                      {/* Message Card - WhatsApp Style Speech Bubble */}
                       <div
-                        className={`max-w-[80%] rounded-xl px-5 py-3.5 shadow-sm ${
+                        className={`max-w-[75%] px-4 py-2.5 shadow-md relative ${
                           msg.role === "user"
-                            ? "bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white border-2 border-[#E31E24]"
-                            : "bg-[#F8F8F8] text-gray-900 border border-gray-200"
+                            ? "bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white rounded-2xl rounded-tl-sm"
+                            : "bg-white text-gray-900 rounded-2xl rounded-tr-sm border border-gray-200/50"
                         }`}
+                        style={{
+                          position: 'relative',
+                        }}
                       >
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                          {msg.content}
-                        </p>
+                        {/* WhatsApp Style Tail - Left Top Corner (Image 4 style) */}
+                        {msg.role === "user" ? (
+                          <div 
+                            className="absolute -left-1.5 top-0 w-0 h-0"
+                            style={{
+                              borderRight: '8px solid #E31E24',
+                              borderTop: '8px solid #E31E24',
+                              borderBottom: '8px solid transparent',
+                              borderLeft: '8px solid transparent',
+                            }}
+                          />
+                        ) : (
+                          <div 
+                            className="absolute -left-1.5 top-0 w-0 h-0"
+                            style={{
+                              borderRight: '8px solid white',
+                              borderTop: '8px solid white',
+                              borderBottom: '8px solid transparent',
+                              borderLeft: '8px solid transparent',
+                            }}
+                          />
+                        )}
+                        {/* Render structured content */}
+                        {msg.chunkType === 'structured' && msg.chunkData ? (
+                          <div className="space-y-2.5">
+                            {msg.chunkData.greeting && (
+                              <p className={`text-sm leading-relaxed mb-2 ${msg.role === "user" ? "text-white/90" : "text-gray-700"}`}>
+                                {msg.chunkData.greeting}
+                              </p>
+                            )}
+                            {msg.chunkData.title && (
+                              <h4 className={`text-sm font-semibold mb-2 ${msg.role === "user" ? "text-white" : "text-gray-900"}`}>
+                                {msg.chunkData.title}
+                              </h4>
+                            )}
+                          </div>
+                        ) : msg.chunkType === 'bullets' && msg.chunkData?.items ? (
+                          <ul className="space-y-2 list-none pl-0">
+                            {msg.chunkData.items.map((item, idx) => (
+                              <li key={idx} className={`text-sm leading-relaxed flex items-start gap-2.5 ${msg.role === "user" ? "text-white" : "text-gray-800"}`}>
+                                <span className={`mt-1 flex-shrink-0 font-bold ${msg.role === "user" ? "text-white" : "text-[#E31E24]"}`}>•</span>
+                                <span className="flex-1">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                            {msg.content}
+                          </p>
+                        )}
                       </div>
-                      {msg.role === "user" && (
-                        <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center" aria-hidden="true">
-                          <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                          </svg>
-                        </div>
-                      )}
+                      {/* User Avatar - REMOVED as per user request (Image shows only message bubble, no avatar) */}
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
                   
-                  {/* Loading Indicator */}
+                  {/* Loading Indicator - WhatsApp Style */}
                   {isLoading && (
-                    <div className="flex justify-start gap-3 animate-fadeIn">
-                      <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gradient-to-br from-[#E31E24] to-[#C41E3A] flex items-center justify-center shadow-sm" aria-hidden="true">
-                        <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
+                    <div className="flex items-start justify-start gap-2.5 animate-fadeIn">
+                      <div className="flex-shrink-0 h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50" aria-hidden="true">
+                        <img
+                          src="/assets/chatbot-avatar.png"
+                          alt="Chatbot Assistant"
+                          className="w-full h-full object-cover"
+                        />
                       </div>
-                      <div className="bg-[#F8F8F8] rounded-xl px-5 py-3.5 border border-gray-200 shadow-sm">
+                      <div className="bg-white rounded-2xl rounded-tr-sm px-4 py-2.5 border border-gray-200/50 shadow-md relative">
+                        {/* Speech Bubble Tail - Left Top */}
+                        <div 
+                          className="absolute -left-1.5 top-0 w-0 h-0"
+                          style={{
+                            borderRight: '8px solid white',
+                            borderTop: '8px solid white',
+                            borderBottom: '8px solid transparent',
+                            borderLeft: '8px solid transparent',
+                          }}
+                        />
                         <div className="flex gap-1.5">
                           <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                           <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
@@ -445,20 +542,20 @@ export default function ChatbotModal({ isOpen, onClose }) {
               )}
             </div>
 
-            {/* Input Area - Minimalist */}
-            <div className="border-t border-[#FFE5E5] bg-white px-6 py-4">
+            {/* Input Area - Attractive Style (Image 3 style) */}
+            <div className="border-t border-[#FFE5E5] bg-gradient-to-b from-white to-[#FFFBFB] px-6 py-4">
               <div className="flex items-center gap-3">
                 {/* Hamburger Menu Icon */}
                 <button
-                  className="p-2 hover:bg-gray-50 rounded-lg transition-colors text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20"
+                  className="p-2 hover:bg-[#FFE5E5] rounded-xl transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
                   aria-label="Menu"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </button>
                 
-                {/* Input Field */}
+                {/* Input Field - Attractive rounded style */}
                 <input
                   ref={inputRef}
                   type="text"
@@ -466,12 +563,12 @@ export default function ChatbotModal({ isOpen, onClose }) {
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyPress={handleKeyPress}
                   placeholder="Type your question here..."
-                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 focus:border-[#E31E24] transition-all duration-200 text-sm text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-5 py-3.5 bg-white border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:border-[#E31E24] transition-all duration-200 text-sm text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
                   disabled={isLoading}
                   aria-label="Chat input"
                 />
                 
-                {/* Send Button - Paper airplane */}
+                {/* Send Button - Attractive circular style */}
                 <button
                   onClick={() => {
                     handleSend(inputText);
@@ -481,7 +578,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                     }, 10);
                   }}
                   disabled={isLoading || !inputText.trim()}
-                  className="flex-shrink-0 p-3 bg-[#E31E24] text-white rounded-full hover:bg-[#C41E3A] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 focus:ring-offset-2 shadow-sm hover:shadow-md active:scale-95"
+                  className="flex-shrink-0 p-3.5 bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white rounded-full hover:from-[#C41E3A] hover:to-[#A01A2E] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:ring-offset-2 shadow-lg hover:shadow-xl active:scale-95"
                   aria-label="Send message"
                   type="button"
                 >

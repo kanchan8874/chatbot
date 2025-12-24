@@ -43,14 +43,15 @@ export default function Navbar() {
           <div className="flex items-center justify-between h-20">
             {/* Logo Section */}
             <div className="flex items-center gap-3">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="relative h-12 w-12 flex items-center justify-center">
+              <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+                <div className="relative h-12 w-12 flex items-center justify-center flex-shrink-0">
                   <img
                     src="/assets/logo1.png"
                     alt="Mobiloitte AI Logo"
                     width={48}
                     height={48}
-                    className="h-12 w-12 object-contain"
+                    className="h-full w-full object-contain object-center"
+                    style={{ maxWidth: '100%', height: 'auto' }}
                     onError={(e) => {
                       e.target.style.display = "none";
                       const fallback = e.target.parentElement?.querySelector(".logo-fallback");
@@ -66,7 +67,7 @@ export default function Navbar() {
                     <span className="text-xl font-bold text-white">M</span>
                   </div>
                 </div>
-                <span className="text-2xl font-bold text-[#E31E24] tracking-tight">
+                <span className="text-2xl font-bold text-[#E31E24] tracking-tight whitespace-nowrap">
                   MOBILOITTE AI
                 </span>
               </Link>

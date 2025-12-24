@@ -74,17 +74,18 @@ export default function LoginPage() {
       <nav className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="relative h-10 w-10 flex items-center justify-center">
+            <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+              <div className="relative h-10 w-10 flex items-center justify-center flex-shrink-0">
                 <img
                   src="/assets/logo1.png"
                   alt="Mobiloitte AI Logo"
                   width={40}
                   height={40}
-                  className="h-10 w-10 object-contain"
+                  className="h-full w-full object-contain object-center"
+                  style={{ maxWidth: '100%', height: 'auto' }}
                 />
               </div>
-              <span className="text-xl font-bold text-[#E31E24] tracking-tight">
+              <span className="text-xl font-bold text-[#E31E24] tracking-tight whitespace-nowrap">
                 MOBILOITTE AI
               </span>
             </Link>
@@ -108,13 +109,14 @@ export default function LoginPage() {
             {/* Logo and Header */}
             <div className="text-center mb-8">
               <div className="flex justify-center mb-6">
-                <div className="relative h-16 w-16 flex items-center justify-center">
+                <div className="relative h-16 w-16 flex items-center justify-center flex-shrink-0">
                   <img
                     src="/assets/logo1.png"
                     alt="Mobiloitte AI Logo"
                     width={64}
                     height={64}
-                    className="h-16 w-16 object-contain"
+                    className="h-full w-full object-contain object-center"
+                    style={{ maxWidth: '100%', height: 'auto' }}
                   />
                 </div>
               </div>
