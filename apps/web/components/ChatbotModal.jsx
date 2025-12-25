@@ -443,7 +443,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       )}
                       {/* Message Card - WhatsApp Style Speech Bubble */}
                       <div
-                        className={`max-w-[75%] px-4 py-2.5 shadow-md relative ${
+                        className={`max-w-[85%] px-4 py-3 shadow-md relative ${
                           msg.role === "user"
                             ? "bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white rounded-2xl rounded-tl-sm"
                             : "bg-white text-gray-900 rounded-2xl rounded-tr-sm border border-gray-200/50"
