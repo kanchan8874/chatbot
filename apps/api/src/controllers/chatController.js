@@ -112,7 +112,7 @@ async function handleMessage(req, res) {
     if (hasProfanity) {
       console.log(`🚫 Profanity detected in message from ${userRole}: "${message.substring(0, 50)}..."`);
       return res.json({
-        response: "I'm here to help you with professional questions about Mobiloitte's services, solutions, and company information. Please use respectful and appropriate language so I can help you better 😊.",
+        response: "I'm here to assist you with professional questions about Mobiloitte's services, solutions, and company information. Please use respectful and appropriate language so I can help you better.",
         sessionId,
         context: { type: "profanity_detected", language: "und" }
       });
@@ -143,7 +143,7 @@ async function handleMessage(req, res) {
     if (isGibberish(message, userRole)) {
       console.log(`⚠️  Gibberish detected: "${message.substring(0, 50)}"`);
       return res.json({
-        response: "I'm sorry, I couldn't understand that. Please ask a clear question about our services or company— I’m here to help 😊",
+        response: "I'm sorry, I couldn't understand that. Please ask a clear question about our services or company.",
         sessionId,
         context: { type: "gibberish", language: detectedLanguage }
       });
@@ -153,7 +153,7 @@ async function handleMessage(req, res) {
     const normalizedMessage = normalizeText(message);
     if (isOutOfScope(normalizedMessage)) {
       return res.json({
-        response: "I'm focused on helping with questions about Mobiloitte's services, AI solutions, company information, and processes. Could you please ask something related to our company?😊",
+        response: "I'm focused on helping with questions about Mobiloitte's services, AI solutions, company information, and processes. Could you please ask something related to our company?",
         sessionId,
         context: { type: "out_of_scope", language: detectedLanguage }
       });

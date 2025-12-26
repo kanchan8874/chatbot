@@ -49,13 +49,7 @@ class EmbeddingService {
     this.dimension = this.useCohere ? this.cohereDimension : (this.useOpenAI ? this.openaiDimension : 1536);
   }
 
-  /**
-   * Single text ko embedding mein convert karta hai
-   * Priority: Cohere (FREE) > OpenAI > Mock
-   * @param {string} text - Text jo embed karna hai
-   * @param {string} inputType - 'search_query' for queries, 'search_document' for documents (Cohere only)
-   * @returns {Promise<number[]>} - Embedding vector
-   */
+
   async generateEmbedding(text, inputType = 'search_document') {
     if (!text || text.trim().length === 0) {
       throw new Error("Text cannot be empty");

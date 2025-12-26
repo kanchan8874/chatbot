@@ -18,15 +18,7 @@ class LLMService {
     this.model = config.openai.model;
   }
 
-  /**
-   * Generate AI response using retrieved context
-   * PRD requirement: Answer ONLY from given sources, no hallucination
-   * 
-   * @param {string} userQuestion - User ka question
-   * @param {object} context - Retrieved context (QA answer, document chunks, or employee data)
-   * @param {string} userRole - User role (client/employee)
-   * @returns {Promise<string>} - AI generated response
-   */
+ 
   async generateResponse(userQuestion, context, userRole = 'client', detectedLanguage = 'und') {
     if (!this.client) {
       throw new Error("OpenAI client not initialized. Please set OPENAI_API_KEY in .env");

@@ -11,12 +11,7 @@ const { detectTopicIntent } = require('./intentDetection');
 
 const INTENT_TO_CANONICAL_QUESTION = require('./intentDetection').INTENT_TO_CANONICAL_QUESTION;
 
-/**
- * Strong lexical overlap checker for CSV Q&A matching
- * - Used to ensure we only accept HIGH‑confidence CSV matches
- * - Requires at least 2 overlapping meaningful tokens
- * - Prioritizes core semantic keywords (CIN, address, services, etc.)
- */
+
 function hasStrongLexicalOverlap(query, candidateQuestion) {
   if (!query || !candidateQuestion) return false;
 

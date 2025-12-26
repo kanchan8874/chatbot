@@ -169,15 +169,7 @@ class DocumentProcessingService {
     return text;
   }
 
-  /**
-   * Split text into chunks with overlap
-   * @param {string} text - Text to chunk
-   * @param {object} options - Chunking options
-   * @param {number} options.chunkSize - Target chunk size in tokens/words
-   * @param {number} options.overlap - Overlap between chunks
-   * @param {string} options.separator - Separator for splitting
-   * @returns {Array<string>} Array of text chunks
-   */
+ 
   chunkText(text, options = {}) {
     const {
       chunkSize = 500, // Increased default chunk size
@@ -247,12 +239,7 @@ class DocumentProcessingService {
     return chunks;
   }
   
-  /**
-   * Helper function to calculate approximate position of a chunk in the full text
-   * @param {string} fullText - The full text
-   * @param {string} chunkText - The chunk text
-   * @returns {number} Approximate word position of the chunk in the full text
-   */
+ 
   calculateTextPosition(fullText, chunkText) {
     const fullWords = fullText.split(/\s+/);
     const chunkWords = chunkText.split(/\s+/);
@@ -278,14 +265,7 @@ class DocumentProcessingService {
     return 0;
   }
 
-  /**
-   * Process a complete document: extract -> clean -> chunk
-   * @param {Buffer} buffer - File buffer
-   * @param {string} mimeType - MIME type
-   * @param {string} filename - Filename
-   * @param {object} chunkOptions - Chunking options
-   * @returns {Promise<{chunks: Array<object>, metadata: object}>} Processed chunks and metadata
-   */
+
   async processDocument(buffer, mimeType, filename, chunkOptions = {}) {
     try {
       // Step 1: Extract text
