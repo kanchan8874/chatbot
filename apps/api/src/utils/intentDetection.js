@@ -437,3 +437,41 @@ module.exports = {
   isOutOfScope,
   classifyIntent
 };
+
+/**
+ * Detect specific fact queries (founder, HQ, address, establishment year, CEO, contact)
+ */
+function isSpecificFactQuery(normalizedMessage) {
+  const text = (normalizedMessage || "").toLowerCase();
+  const factKeywords = [
+    "founder",
+    "cofounder",
+    "co-founder",
+    "ceo",
+    "director",
+    "chairman",
+    "leadership",
+    "head office",
+    "headquarter",
+    "hq",
+    "office address",
+    "address",
+    "location",
+    "where is",
+    "based in",
+    "located",
+    "established",
+    "founded",
+    "establishment year",
+    "established in",
+    "since",
+    "contact",
+    "phone",
+    "email",
+    "website"
+  ];
+
+  return factKeywords.some((kw) => text.includes(kw));
+}
+
+module.exports.isSpecificFactQuery = isSpecificFactQuery;

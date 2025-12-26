@@ -5,7 +5,7 @@
 
 const QAPair = require("../database/models/QAPair");
 const { normalizeText, generateQuestionHash, hasMeaningfulOverlap } = require('../utils/textProcessing');
-const { detectTopicIntent, INTENT_TO_CANONICAL_QUESTION } = require('../utils/intentDetection');
+const { detectTopicIntent, INTENT_TO_CANONICAL_QUESTION, isSpecificFactQuery } = require('../utils/intentDetection');
 const { searchCSVQA, searchMongoDBByKeywords, searchMongoDBQA, searchDocuments } = require('../utils/searchUtils');
 const llmService = require("../services/llmService");
 const freeLLMService = require("../services/freeLLMService");
@@ -103,6 +103,12 @@ async function getCompanyInformationAggregate(audienceFilter) {
  * Handle client/general queries
  */
 async function handleClientQuery(message, normalizedMessage, userRole, audienceFilter) {
+  // SPECIFIC FACT QUERIES FIRST (founder, address, HQ, CEO, establishment year, contact)
+  if (isSpecificFactQuery(normalizedMessage)) {
+    const factResponse = await handleSpecificFactQuery(message, normalizedMessage, userRole, audienceFilter);
+    return factResponse;
+  }
+
   // 0) SPECIAL HANDLER: Company Information Queries
   // These queries need aggregated responses, not strict matching
   if (isCompanyInformationQuery(normalizedMessage, message)) {
@@ -228,6 +234,63 @@ async function handleClientQuery(message, normalizedMessage, userRole, audienceF
   return {
     response: "I couldn't find relevant information for this query. Please ask about Mobiloitte's services, solutions, or processes.",
     context: { type: "no_data_found" }
+  };
+}
+
+/**
+ * Handle specific fact queries with strict, short, factual answers
+ * Pipeline: CSV exact/hash -> semantic CSV -> keyword CSV -> RAG doc -> LLM synthesis (strict)
+ */
+async function handleSpecificFactQuery(message, normalizedMessage, userRole, audienceFilter) {
+  // 1) Exact/hash match in Mongo (CSV)
+  let qaPair = await searchMongoDBQA(normalizedMessage, audienceFilter, userRole, message);
+  if (qaPair) {
+    return {
+      response: qaPair.answer,
+      context: { type: "qa", answer: qaPair.answer }
+    };
+  }
+
+  // 2) Semantic CSV search
+  const semanticQA = await searchCSVQA(normalizedMessage, userRole);
+  if (semanticQA && semanticQA.score && semanticQA.score >= 0.7 && hasMeaningfulOverlap(message, semanticQA.question)) {
+    return {
+      response: semanticQA.answer,
+      context: { type: "qa", answer: semanticQA.answer }
+    };
+  }
+
+  // 3) Keyword-based CSV search
+  qaPair = await searchMongoDBByKeywords(normalizedMessage, audienceFilter, {
+    skipFAQCheck: true,
+    prioritizeFounder: true
+  });
+  if (qaPair) {
+    return {
+      response: qaPair.answer,
+      context: { type: "qa", answer: qaPair.answer }
+    };
+  }
+
+  // 4) Document RAG (top relevant chunks)
+  const namespace = userRole === "employee" ? "employee_docs" : "public_docs";
+  const chunks = await searchDocuments(message, userRole, namespace);
+  const goodChunks = chunks && chunks.length > 0 ? chunks.filter((c) => c.score >= 0.35).slice(0, 3) : [];
+
+  if (goodChunks.length === 0) {
+    return {
+      response: "I couldn’t find that information right now. Please try asking with a bit more detail.",
+      context: { type: "no_data_found" }
+    };
+  }
+
+  // 5) LLM synthesis (strict, short)
+  const context = { type: "document_fact", chunks: goodChunks };
+  const response = await generateLLMResponse(message, context, userRole);
+
+  return {
+    response,
+    context
   };
 }
 

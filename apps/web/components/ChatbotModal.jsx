@@ -12,6 +12,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [expandedMessages, setExpandedMessages] = useState(new Set()); // Track expanded "Show more" messages
+  const [isMenuOpen, setIsMenuOpen] = useState(false); // Hamburger panel (footer)
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -75,7 +76,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
           text: "Get instant answers about Mobiloitte's services",
           query: "What services does Mobiloitte provide?"
         },
-      
+     
         { 
           text: "Find contact information and company details",
           query: "How can I contact Mobiloitte? What is the company information?"
@@ -221,14 +222,17 @@ export default function ChatbotModal({ isOpen, onClose }) {
       {/* Backdrop - Soft blur */}
       <div
         className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 transition-opacity duration-300"
-        onClick={onClose}
+        onClick={() => {
+          setIsMenuOpen(false);
+          onClose();
+        }}
         aria-hidden="true"
       />
 
       {/* Modal Container - World-class design */}
       <div
         className={`fixed bottom-4 right-4 z-50 w-[420px] sm:w-[460px] bg-white rounded-xl shadow-2xl transition-all duration-300 ease-out ${
-          isMinimized ? "h-20" : "h-[750px] max-h-[90vh]"
+          isMinimized ? "h-20" : "h-[760px] max-h-[90vh]"
         } flex flex-col overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -236,7 +240,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
         aria-labelledby="chatbot-title"
       >
         {/* Header - Clean design */}
-        <div className="bg-gradient-to-r from-[#FFF0F0] to-[#FFE8E8] px-6 py-4 flex items-center justify-between border-b border-[#FFE5E5]">
+        <div className="bg-gradient-to-r from-[#FFF0F0] to-[#FFE8E8] px-6 py-4 flex items-center justify-between border-b border-[#FFE5E5] relative">
           <div className="flex items-center gap-4 min-w-0 flex-1">
             {/* Logo - Using logo1.png */}
             <div className="relative flex-shrink-0">
@@ -303,6 +307,65 @@ export default function ChatbotModal({ isOpen, onClose }) {
           </div>
         </div>
 
+        {/* Footer menu panel (opened via footer hamburger) */}
+        {isMenuOpen && (
+          <div className="absolute inset-0 z-40 flex items-end justify-center sm:items-center">
+            <div
+              className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+              onClick={() => setIsMenuOpen(false)}
+              aria-hidden="true"
+            />
+            <div className="relative w-[92%] sm:w-[80%] md:w-[70%] lg:w-[60%] max-h-[70%] bg-white rounded-2xl shadow-2xl overflow-hidden mb-4 sm:mb-0 transform transition-all duration-200">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <div className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <span className="h-7 w-7 rounded-lg bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white flex items-center justify-center text-xs font-bold">M</span>
+                  Quick Actions
+                </div>
+                <button
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-gray-500 hover:text-[#E31E24] p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30"
+                  aria-label="Close menu"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3 p-4 bg-gradient-to-b from-white to-gray-50 overflow-y-auto max-h-[60vh]">
+                {[
+                  {  label: "AI Services", query: "What AI services does Mobiloitte provide?" },
+                  {  label: "Solutions", query: "What solutions does Mobiloitte offer?" },
+                  {  label: "Company Info", query: "Tell me about Mobiloitte" },
+                  {  label: "Contact", query: "How can I contact Mobiloitte?" },
+                  {  label: "FAQs", query: "What are the frequently asked questions?" },
+                  {  label: "Website", query: "What is Mobiloitte's website?" },
+                ].map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      handleTopicClick(item.query);
+                    }}
+                    className="flex items-start gap-3 p-3.5 bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md hover:border-[#E31E24]/40 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 text-left"
+                    aria-label={`Ask about ${item.label}`}
+                  >
+                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#FFF0F0] to-[#FFE5E5] flex items-center justify-center text-lg">
+                      {item.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">{item.label}</p>
+                      <p className="text-xs text-gray-500 truncate">Tap to ask</p>
+                    </div>
+                    <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {!isMinimized && (
           <>
             {/* Content Area - Spacious */}
@@ -333,8 +396,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       </div>
                       <div className="flex-1">
                         <p className="text-sm text-gray-800 leading-relaxed">
-                          Hi! I'm your <b>Mobiloitte</b> {assistantTitle}. <br />
-                           What would you like to do today? <br /> I'm here to help! 😊
+                          Hi! I'm your <b>Mobiloitte</b>  {assistantTitle}. <br /> What would you like to do today? <br /> I'm here to help! 😊
                         </p>
                         {!isAuthenticated && (
                           <p className="text-xs text-gray-500 mt-2">
@@ -348,7 +410,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                             >
                               Sign in.
                             </Link>{" "}
-                      
+                          
                           </p>
                         )}
                       </div>
@@ -379,7 +441,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       <svg className="h-5 w-5 text-[#E31E24]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                       </svg>
-                      <h4 className="text-sm mt-6 font-semibold text-gray-800">Skill Spotlight....</h4>
+                      <h4 className="text-sm font-semibold text-gray-800 mt-5">Skill Spotlight...</h4>
                     </div>
                     <p className="text-xs text-gray-600 mb-3 animate-fadeInUp" style={{ animationDelay: '1.35s', animationFillMode: 'both' }}></p>
                     <div className="space-y-2">
@@ -387,7 +449,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                         <button
                           key={index}
                           onClick={() => handleTopicClick(skill.query)}
-                          className="w-full mt-5 flex items-center gap-4 px-4 py-3.5 bg-white hover:bg-[#FFF5F5] rounded-xl border border-gray-300 hover:border-[#E31E24]/30 transition-all duration-200 text-left group focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md cursor-pointer animate-fadeInUp"
+                          className="w-full flex items-center gap-4 px-4 py-3.5 bg-white hover:bg-[#FFF5F5] rounded-xl border border-gray-300 hover:border-[#E31E24]/30 transition-all duration-200 text-left group focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md cursor-pointer animate-fadeInUp"
                           style={{ animationDelay: `${1.4 + index * 0.1}s`, animationFillMode: 'both' }}
                           aria-label={`Ask about ${skill.text}`}
                         >
@@ -533,7 +595,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                           <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                         </div>
                       </div>
-                      <span className="sr-only">Assistant is typing...</span>
+                      <span className="sr-only">Assistant is typing</span>
                     </div>
                   )}
                 </div>
@@ -545,12 +607,19 @@ export default function ChatbotModal({ isOpen, onClose }) {
               <div className="flex items-center gap-3">
                 {/* Hamburger Menu Icon */}
                 <button
-                  className="p-2 hover:bg-[#FFE5E5] rounded-xl border-2 transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
-                  aria-label="Menu"
+                  onClick={() => setIsMenuOpen((prev) => !prev)}
+                  className="p-2 hover:bg-[#FFE5E5] rounded-xl transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
+                  aria-label={isMenuOpen ? "Close menu" : "Open menu"}
                 >
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
+                  {isMenuOpen ? (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  )}
                 </button>
                 
                 {/* Input Field - Attractive rounded style */}

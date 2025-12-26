@@ -101,6 +101,27 @@ Answer using ONLY the information from the chunks above. If the answer is not in
 
           break;
 
+        case 'document_fact':
+          // Fact-focused RAG - very short, factual, only from chunks
+          const factChunks = context.chunks
+            .map((chunk, idx) => `[Fact Source ${idx + 1}]\n${chunk.text || chunk.metadata?.text || ''}`)
+            .join('\n\n');
+
+          systemPrompt = `You are Mobiloitte AI. Provide a short, factual answer using ONLY the provided context.
+Rules:
+- Keep it concise (1-2 sentences)
+- Use only relevant facts from the context
+- Do NOT add anything beyond the context
+- If the answer is not present, say: "I don’t have that information right now."`;
+
+          userPrompt = `Question: ${userQuestion}
+
+Context:
+${factChunks}
+
+Answer in 1-2 sentences using only the context above. If not found, say you don't have that information.`;
+          break;
+
         case 'employee_data':
           // Employee operational data
           systemPrompt = `You are Mobiloitte AI, an internal assistant for Mobiloitte employees.
