@@ -75,10 +75,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
           text: "Get instant answers about Mobiloitte's services",
           query: "What services does Mobiloitte provide?"
         },
-        { 
-          text: "Learn about AI solutions and offerings",
-          query: "What AI solutions and offerings does Mobiloitte have?"
-        },
+      
         { 
           text: "Find contact information and company details",
           query: "How can I contact Mobiloitte? What is the company information?"
@@ -230,7 +227,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
 
       {/* Modal Container - World-class design */}
       <div
-        className={`fixed bottom-4 right-4 z-50 w-[420px] sm:w-[460px] bg-white rounded-3xl shadow-2xl transition-all duration-300 ease-out ${
+        className={`fixed bottom-4 right-4 z-50 w-[420px] sm:w-[460px] bg-white rounded-xl shadow-2xl transition-all duration-300 ease-out ${
           isMinimized ? "h-20" : "h-[750px] max-h-[90vh]"
         } flex flex-col overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
@@ -336,7 +333,8 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       </div>
                       <div className="flex-1">
                         <p className="text-sm text-gray-800 leading-relaxed">
-                          Hi! I'm your Mobiloitte {assistantTitle}. What would you like to do today? I'm here to help!
+                          Hi! I'm your <b>Mobiloitte</b> {assistantTitle}. <br />
+                           What would you like to do today? <br /> I'm here to help! 😊
                         </p>
                         {!isAuthenticated && (
                           <p className="text-xs text-gray-500 mt-2">
@@ -348,9 +346,9 @@ export default function ChatbotModal({ isOpen, onClose }) {
                                 onClose();
                               }}
                             >
-                              Sign in
+                              Sign in.
                             </Link>{" "}
-                            for employee features.
+                      
                           </p>
                         )}
                       </div>
@@ -363,7 +361,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       <button
                         key={index}
                         onClick={() => handleTopicClick(topic.query)}
-                        className="group flex items-center gap-2.5 px-4 py-2.5 bg-white border border-gray-200 rounded-full hover:border-[#E31E24] hover:bg-[#FFF5F5] transition-all duration-200 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md animate-fadeInUp"
+                        className="group flex items-center gap-2.5 px-4 py-2.5 bg-white border border-gray-300 rounded-full hover:border-[#E31E24] hover:bg-[#FFF5F5] transition-all duration-200 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md animate-fadeInUp"
                         style={{ animationDelay: `${0.7 + index * 0.08}s`, animationFillMode: 'both' }}
                         aria-label={`Ask about ${topic.label}`}
                       >
@@ -381,15 +379,15 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       <svg className="h-5 w-5 text-[#E31E24]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                       </svg>
-                      <h4 className="text-sm font-semibold text-gray-800">Skill Spotlight</h4>
+                      <h4 className="text-sm mt-6 font-semibold text-gray-800">Skill Spotlight....</h4>
                     </div>
-                    <p className="text-xs text-gray-600 mb-3 animate-fadeInUp" style={{ animationDelay: '1.35s', animationFillMode: 'both' }}>Do you know I can help you to..</p>
+                    <p className="text-xs text-gray-600 mb-3 animate-fadeInUp" style={{ animationDelay: '1.35s', animationFillMode: 'both' }}></p>
                     <div className="space-y-2">
                       {getSkillSpotlight().map((skill, index) => (
                         <button
                           key={index}
                           onClick={() => handleTopicClick(skill.query)}
-                          className="w-full flex items-center gap-4 px-4 py-3.5 bg-white hover:bg-[#FFF5F5] rounded-xl border border-gray-200 hover:border-[#E31E24]/30 transition-all duration-200 text-left group focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md cursor-pointer animate-fadeInUp"
+                          className="w-full mt-5 flex items-center gap-4 px-4 py-3.5 bg-white hover:bg-[#FFF5F5] rounded-xl border border-gray-300 hover:border-[#E31E24]/30 transition-all duration-200 text-left group focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md cursor-pointer animate-fadeInUp"
                           style={{ animationDelay: `${1.4 + index * 0.1}s`, animationFillMode: 'both' }}
                           aria-label={`Ask about ${skill.text}`}
                         >
@@ -535,7 +533,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                           <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                         </div>
                       </div>
-                      <span className="sr-only">Assistant is typing</span>
+                      <span className="sr-only">Assistant is typing...</span>
                     </div>
                   )}
                 </div>
@@ -547,10 +545,10 @@ export default function ChatbotModal({ isOpen, onClose }) {
               <div className="flex items-center gap-3">
                 {/* Hamburger Menu Icon */}
                 <button
-                  className="p-2 hover:bg-[#FFE5E5] rounded-xl transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
+                  className="p-2 hover:bg-[#FFE5E5] rounded-xl border-2 transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
                   aria-label="Menu"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </button>
