@@ -71,7 +71,7 @@ Answer using ONLY the provided answer above:`;
         case 'document':
           const docLangInstruction = detectedLanguage !== 'eng' && detectedLanguage !== 'und' ? 'Please respond in the same language as the user\'s query (Hindi/English mix is acceptable).' : 'Please respond in English.';
           const chunksText = context.chunks
-            .map((chunk, idx) => `[Source ${idx + 1}]\n${chunk.text || chunk.metadata?.text || ''}`)
+            .map((chunk, idx) => `[Source ${idx + 1}] (source_id=${chunk.metadata?.source_id || chunk.source || 'unknown'}, chunk_id=${chunk.metadata?.chunk_id || chunk.chunkId || 'unknown'}, score=${chunk.score ?? 'n/a'})\n${chunk.text || chunk.metadata?.text || ''}`)
             .join('\n\n');
 
           systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
@@ -87,9 +87,10 @@ RESPONSE FORMATTING RULES (CRITICAL):
 4. Use bullet points instead of long paragraphs
 5. Be conversational, polite, and professional
 6. Answer ONLY using information from the provided chunks
-7. If information is not in the chunks, politely suggest rephrasing or asking about Mobiloitte's services
+7. If the needed information is NOT present in the chunks, explicitly respond: "I don’t have enough information from the provided sources."
 8. Do NOT make up information
-9. " + docLangInstruction + "`;
+9. Add inline citations in the answer using [S1], [S2] referring to the numbered sources
+10. " + docLangInstruction + "`;
 
           userPrompt = `Question: ${userQuestion}
 
@@ -98,8 +99,8 @@ ${chunksText}
 
 Format your answer as:
 - Short greeting/context (1 line)
-- Bullet points if listing items (• item 1, • item 2, etc.)
-- Brief summary (1-2 lines)
+- Bullet points if listing items (• item 1, • item 2, etc.) and add inline citation [S#] per bullet
+- Brief summary (1-2 lines) with a citation if relevant
 
 Answer using ONLY the information from the chunks above:`;
           break;

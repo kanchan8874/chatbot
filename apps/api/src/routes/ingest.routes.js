@@ -139,6 +139,12 @@ router.post("/csv", requireAdmin, upload.single("file"), async (req, res) => {
     // Save all QA pairs
     await QAPair.insertMany(qaPairs);
 
+    // Delete old vectors for this source/version before upsert (reindex hygiene)
+    await pineconeService.deleteVectors(
+      { source_id: sourceId, source_type: "csv", version: job.version || "v1" },
+      "qa"
+    );
+
     // Generate embeddings for questions and upsert to Pinecone "qa" namespace
     if (qaPairs.length > 0) {
       const questions = qaPairs.map((qa) => qa.question || "");
@@ -237,6 +243,12 @@ router.post("/docs", requireAdmin, upload.single("file"), async (req, res) => {
       buffer: req.file.buffer,
     });
     
+    // Delete old vectors for this source/version before upsert (reindex hygiene)
+    await pineconeService.deleteVectors(
+      { source_id: sourceId, source_type: "doc", version: job.version || "v1" },
+      audience === 'employee' ? 'employee_docs' : 'public_docs'
+    );
+
     // Extract, clean, and chunk the document
     const { chunks, metadata } = await documentProcessor.processDocument(
       req.file.buffer,
@@ -381,6 +393,12 @@ router.post("/webcrawl", requireAdmin, async (req, res) => {
       extension: ".html",
       buffer,
     });
+
+    // Delete old vectors for this source/version before upsert (reindex hygiene)
+    await pineconeService.deleteVectors(
+      { source_id: sourceId, source_type: "web", version: job.version || "v1" },
+      audience === 'employee' ? 'employee_docs' : 'public_docs'
+    );
     
     // Extract, clean, and chunk the document
     const { chunks, metadata } = await documentProcessor.processDocument(

@@ -219,9 +219,59 @@ function formatResponseForAPI(responseText, options = {}) {
   };
 }
 
+/**
+ * Build citations array from context
+ */
+function buildCitations(context) {
+  if (!context) return [];
+
+  if (context.type === "document" && context.chunks) {
+    return context.chunks.map((chunk, idx) => ({
+      id: chunk.metadata?.chunk_id || chunk.chunkId || `source-${idx + 1}`,
+      source_id: chunk.metadata?.source_id || chunk.source,
+      url: chunk.metadata?.url,
+      title: chunk.metadata?.title,
+      page: chunk.metadata?.page,
+      heading_path: chunk.metadata?.heading_path || chunk.metadata?.headingPath,
+      score: chunk.score,
+    }));
+  }
+
+  if (context.type === "qa" && context.source) {
+    return [{ source_id: context.source }];
+  }
+
+  if (context.type === "employee_data" && context.data?.employeeId) {
+    return [{ source_id: `employee-${context.data.employeeId}`, note: "operational_db" }];
+  }
+
+  return [];
+}
+
 module.exports = {
   formatResponse,
   formatResponseForAPI,
   isTooLong,
   extractBulletPoints,
+  buildCitations,
 };
+
+/**
+ * Redact sensitive details from response text for client role
+ * Removes emails and phone-like patterns for public users.
+ */
+function redactResponseText(responseText, userRole) {
+  if (!responseText || userRole !== "client") return responseText;
+
+  let redacted = responseText;
+
+  // Email pattern
+  redacted = redacted.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted]");
+
+  // Phone pattern (simple)
+  redacted = redacted.replace(/\+?\d[\d\s\-()]{7,}\d/g, "[redacted]");
+
+  return redacted;
+}
+
+module.exports.redactResponseText = redactResponseText;

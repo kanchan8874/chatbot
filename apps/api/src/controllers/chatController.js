@@ -18,12 +18,62 @@ const { hasAdminKeywords, handleAdminQuery } = require("../handlers/adminHandler
 const { hasHRKeywords, handleEmployeeQuery } = require("../handlers/employeeHandler");
 const { handleClientQuery } = require("../handlers/clientHandler");
 const { searchDocuments } = require("../utils/searchUtils");
-const { formatResponseForAPI } = require("../utils/responseFormatter");
+const { formatResponseForAPI, redactResponseText, buildCitations } = require("../utils/responseFormatter");
 const llmService = require("../services/llmService");
 const freeLLMService = require("../services/freeLLMService");
 // Follow-up questions removed - simple chatbot behavior
 
 const employeeDataService = require("../services/employeeDataService");
+const ChatLog = require("../database/models/ChatLog");
+
+// Simple per-role rate limit (in-memory)
+const rateLimits = {
+  client: { limit: 60, windowMs: 60_000 },
+  employee: { limit: 120, windowMs: 60_000 },
+  admin: { limit: 200, windowMs: 60_000 },
+};
+const rateState = new Map(); // key: role|ip
+
+function checkRateLimit(role, ip) {
+  const key = `${role}|${ip || "unknown"}`;
+  const { limit, windowMs } = rateLimits[role] || rateLimits.client;
+  const now = Date.now();
+  const entry = rateState.get(key) || { count: 0, ts: now };
+  if (now - entry.ts > windowMs) {
+    rateState.set(key, { count: 1, ts: now });
+    return null;
+  }
+  if (entry.count >= limit) {
+    return { message: "Rate limit exceeded. Please wait a moment and try again." };
+  }
+  rateState.set(key, { count: entry.count + 1, ts: entry.ts });
+  return null;
+}
+
+// Simple action intent detector for escalation
+function detectActionIntent(normalizedMessage) {
+  const salesKeywords = ["price", "pricing", "quote", "proposal", "contact sales", "sales call", "demo"];
+  const hrActionKeywords = ["apply leave", "apply for leave", "approve leave", "approval", "sanction leave"];
+
+  const lowerMsg = normalizedMessage.toLowerCase();
+  const hasSales = salesKeywords.some(k => lowerMsg.includes(k));
+  const hasHrAction = hrActionKeywords.some(k => lowerMsg.includes(k));
+
+  if (hasSales) return "sales_followup";
+  if (hasHrAction) return "hr_action";
+  return null;
+}
+
+function buildHandoverPayload({ message, userRole, intent, context, topScore }) {
+  return {
+    reason: "low_confidence",
+    intent,
+    role: userRole,
+    topScore: topScore ?? null,
+    message,
+    sources: buildCitations(context || {}),
+  };
+}
 
 /**
  * Generate LLM response
@@ -48,7 +98,15 @@ async function generateLLMResponse(question, context, userRole, detectedLanguage
  */
 async function handleMessage(req, res) {
   try {
+    const startTime = Date.now();
     const { message, sessionId, authToken } = req.body;
+    const rateResult = checkRateLimit(req.user?.role || "client", req.ip);
+    if (rateResult) {
+      return res.status(429).json({
+        response: rateResult.message,
+        sessionId
+      });
+    }
     
     // Step 1: Validate input
     if (!message || message.trim().length === 0) {
@@ -236,6 +294,23 @@ async function handleMessage(req, res) {
         const clientResult = await handleClientQuery(message, normalizedMessage, userRole, audienceFilter);
         response = clientResult.response;
         context = clientResult.context;
+
+        // If no high-confidence CSV result and no context, ask clarify instead of hallucinating
+        if (!context || (context.type === "no_data_found")) {
+          const actionIntent = detectActionIntent(normalizedMessage);
+          if (actionIntent) {
+            const handover = buildHandoverPayload({ message, userRole, intent: actionIntent, context, topScore: null });
+            response = "Main is request ko team tak forward kar raha hoon. Kya aap apna preferred contact (email/phone) share kar sakte hain?";
+            context = { type: "handover", actionIntent, handover };
+          } else {
+            response = "Mujhe exact match nahi mila. Kya aap service/department ya topic thoda aur specific bata sakte hain?";
+            context = { type: "clarify_csv", reason: "low_confidence_csv" };
+          }
+        } else if (context && context.type === "document" && (!context.chunks || context.chunks.length === 0)) {
+          // Hard refusal when CSV routed to doc fallback but no evidence
+          response = "Mere paas is query ka jawaab dene ke liye koi supporting information nahi mili. Kya aap kisi specific service ya topic par pooch sakte hain?";
+          context = { type: "no_data_found" };
+        }
         
         // Apply language-specific transformation if needed
         if (detectedLanguage !== 'eng' && detectedLanguage !== 'und') {
@@ -297,13 +372,34 @@ async function handleMessage(req, res) {
           
           // Use adaptive threshold based on query type and context
           const threshold = isFAQQuery(normalizeText(message)) ? 0.4 : 0.5; // Lower threshold for FAQ-like queries
-          const goodChunks = chunks && chunks.length > 0 && chunks[0].score > threshold 
-            ? chunks.filter(chunk => chunk.score > threshold)
+          let filteredChunks = chunks || [];
+          // Extra audience guard: ensure client never sees non-public chunks
+          if (userRole === "client") {
+            filteredChunks = filteredChunks.filter(c => (c.metadata?.audience || c.audience) === "public");
+          }
+          
+          const goodChunks = filteredChunks && filteredChunks.length > 0 && filteredChunks[0].score > threshold 
+            ? filteredChunks.filter(chunk => chunk.score > threshold)
             : [];
           
           if (goodChunks.length > 0) {
             context = { type: "document", chunks: goodChunks };
             response = await generateLLMResponse(message, context, userRole, detectedLanguage);
+          } else if (filteredChunks && filteredChunks.length > 0 && filteredChunks[0].score >= 0.25) {
+            // Low-confidence guardrail → ask for clarification instead of hallucinating
+            const actionIntent = detectActionIntent(normalizeText(message));
+            if (actionIntent) {
+              const handover = buildHandoverPayload({ message, userRole, intent: actionIntent, context, topScore: filteredChunks[0].score });
+              response = "Main is request ko team tak forward kar raha hoon. Kya aap apna preferred contact (email/phone) share kar sakte hain?";
+              context = { type: "handover", actionIntent, handover };
+            } else {
+              response = "Mujhe exact info nahi mil paayi. Kya aap thoda aur specific bata sakte hain (service/department ya topic)?";
+              context = { type: "clarify", reason: "low_confidence", topScore: filteredChunks[0].score };
+            }
+          } else if (!filteredChunks || filteredChunks.length === 0) {
+            // Hard refusal when no evidence present
+            response = "Mere paas is query ka jawaab dene ke liye koi supporting information nahi mili. Kya aap kisi specific service ya topic par pooch sakte hain?";
+            context = { type: "no_data_found" };
           } else {
             // Fallback for employee users
             if (userRole === "employee") {
@@ -333,6 +429,9 @@ async function handleMessage(req, res) {
         break;
     }
     
+    // Redact sensitive data for client responses
+    response = redactResponseText(response, userRole);
+
     // Step 10: Format response into structured chunks (Kenyt AI style)
     const formattedResponse = formatResponseForAPI(response, {
       maxLinesPerBubble: 5,
@@ -342,7 +441,7 @@ async function handleMessage(req, res) {
     });
     
     // Simple chatbot - just return the answer, no follow-up questions
-    return res.json({
+    const payload = {
       response: formattedResponse.originalText, // Keep original for backward compatibility
       formatted: formattedResponse.formatted,
       chunks: formattedResponse.chunks,
@@ -351,8 +450,29 @@ async function handleMessage(req, res) {
         ...context,
         language: detectedLanguage,
         intent: intent
-      }
+      },
+      citations: buildCitations(context)
+    };
+
+    // Basic structured log (persist + console)
+    const logEntry = {
+      role: userRole,
+      intent,
+      contextType: context?.type,
+      topScore: context?.topScore || null,
+      hasHandover: context?.type === "handover",
+      latencyMs: Date.now() - startTime,
+      sessionId,
+      message,
+      handoverIntent: context?.actionIntent,
+      sources: payload.citations,
+    };
+    console.log("[chat_trace]", JSON.stringify(logEntry));
+    ChatLog.create(logEntry).catch((err) => {
+      console.warn("Failed to persist chat log:", err.message);
     });
+
+    return res.json(payload);
     
   } catch (error) {
     console.error("Chat error:", error);
