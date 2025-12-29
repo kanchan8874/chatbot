@@ -1,17 +1,5 @@
 // Document processing service for extracting, cleaning, and chunking text
-// Phase 2: Proper PDF/Word parsing implementation
-
-let pdfParse;
-try {
-  pdfParse = require('pdf-parse');
-} catch (error) {
-  console.warn("⚠️  pdf-parse not available, using fallback PDF parsing");
-  pdfParse = null;
-}
-
-const mammoth = require('mammoth');
-const fs = require('fs');
-const path = require('path');
+// Simplified version to avoid complex dependencies
 
 class DocumentProcessingService {
   /**
@@ -33,46 +21,18 @@ class DocumentProcessingService {
 
       switch (mimeType) {
         case 'application/pdf':
-          // Proper PDF parsing using pdf-parse
-          if (pdfParse) {
-            try {
-              console.log("📄 Parsing PDF file with pdf-parse...");
-              const pdfData = await pdfParse(buffer);
-              text = pdfData.text;
-              metadata.pageCount = pdfData.numpages;
-              metadata.title = pdfData.info?.Title || filename.replace('.pdf', '');
-              console.log(`✅ PDF parsed: ${metadata.pageCount} pages, ${text.length} characters`);
-            } catch (pdfError) {
-              console.warn(`⚠️  PDF parsing error: ${pdfError.message}, using fallback`);
-              // Fallback: basic text extraction
-              text = buffer.toString('utf-8').replace(/[^\x20-\x7E\n\r]/g, ' ');
-            }
-          } else {
-            console.warn("⚠️  pdf-parse not available, using basic extraction");
-            text = buffer.toString('utf-8').replace(/[^\x20-\x7E\n\r]/g, ' ');
-          }
+          // For now, we'll just convert PDF to text as a string
+          // In a production environment, you would use a proper PDF parser
+          text = buffer.toString('utf-8');
+          console.warn("PDF parsing is simplified. In production, use a proper PDF parser.");
           break;
 
         case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-          // Proper Word DOCX parsing using mammoth
-          console.log("📄 Parsing Word DOCX file...");
-          const docxResult = await mammoth.extractRawText({ buffer: buffer });
-          text = docxResult.value;
-          // Try to extract title from document properties
-          const docxHtml = await mammoth.convertToHtml({ buffer: buffer });
-          const titleMatch = docxHtml.value.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-          if (titleMatch) {
-            metadata.title = titleMatch[1].trim();
-          }
-          console.log(`✅ DOCX parsed: ${text.length} characters`);
-          break;
-
         case 'application/msword':
-          // Old Word format (.doc) - mammoth doesn't support, use fallback
-          console.warn("⚠️  Old Word format (.doc) detected. Mammoth only supports .docx. Using basic extraction.");
+          // For now, we'll just convert Word docs to text as a string
+          // In a production environment, you would use a proper Word parser
           text = buffer.toString('utf-8');
-          // Try to extract readable text
-          text = text.replace(/[^\x20-\x7E\n\r]/g, ' '); // Remove non-printable chars
+          console.warn("Word document parsing is simplified. In production, use a proper Word parser.");
           break;
 
         case 'text/html':
@@ -169,103 +129,68 @@ class DocumentProcessingService {
     return text;
   }
 
- 
+  /**
+   * Split text into chunks with overlap
+   * @param {string} text - Text to chunk
+   * @param {object} options - Chunking options
+   * @param {number} options.chunkSize - Target chunk size in tokens/words
+   * @param {number} options.overlap - Overlap between chunks
+   * @param {string} options.separator - Separator for splitting
+   * @returns {Array<string>} Array of text chunks
+   */
   chunkText(text, options = {}) {
     const {
-      chunkSize = 500, // Increased default chunk size
+      chunkSize = 300,
       overlap = 50,
       separator = '\n\n'
     } = options;
 
     if (!text) return [];
 
-    // First try to split by the provided separator
+    // Split by paragraphs first
     let chunks = [];
     const paragraphs = text.split(separator).filter(p => p.trim().length > 0);
 
-    // If the separator didn't work well (e.g., single large block of text),
-    // fallback to word-based chunking
-    if (paragraphs.length <= 1) {
-      // Split text into words
-      const words = text.split(/\s+/);
-      
-      if (words.length <= chunkSize) {
-        // If text is smaller than chunk size, return as single chunk
-        return [text.trim()];
-      }
-      
-      // Split into word-based chunks
-      for (let i = 0; i < words.length; i += (chunkSize - overlap)) {
-        const chunkWords = words.slice(i, i + chunkSize);
-        chunks.push(chunkWords.join(' '));
-      }
-    } else {
-      // Combine paragraphs into chunks (original logic)
-      let currentChunk = '';
-      let currentLength = 0;
+    // Combine paragraphs into chunks
+    let currentChunk = '';
+    let currentLength = 0;
 
-      for (const paragraph of paragraphs) {
-        const paraLength = paragraph.split(/\s+/).length;
+    for (const paragraph of paragraphs) {
+      const paraLength = paragraph.split(/\s+/).length;
 
-        // If adding this paragraph would exceed chunk size, save current chunk
-        if (currentLength + paraLength > chunkSize && currentChunk) {
-          chunks.push(currentChunk.trim());
-          // Include overlap from the current paragraph if it's large enough
-          if (overlap > 0 && paraLength > overlap) {
-            const overlapWords = paragraph.split(/\s+/).slice(0, overlap).join(' ');
-            currentChunk = overlapWords;
-            currentLength = overlap;
-          } else {
-            currentChunk = '';
-            currentLength = 0;
-          }
-        }
-
-        // Add paragraph to current chunk
-        if (currentChunk) {
-          currentChunk += separator + paragraph;
-        } else {
-          currentChunk = paragraph;
-        }
-        currentLength += paraLength;
-      }
-
-      // Add the last chunk if it exists
-      if (currentChunk) {
+      // If adding this paragraph would exceed chunk size, save current chunk
+      if (currentLength + paraLength > chunkSize && currentChunk) {
         chunks.push(currentChunk.trim());
+        // Reset with overlap
+        currentChunk = '';
+        currentLength = 0;
       }
+
+      // Add paragraph to current chunk
+      if (currentChunk) {
+        currentChunk += separator + paragraph;
+      } else {
+        currentChunk = paragraph;
+      }
+      currentLength += paraLength;
+    }
+
+    // Add the last chunk if it exists
+    if (currentChunk) {
+      chunks.push(currentChunk.trim());
     }
 
     return chunks;
   }
-  
- 
-  calculateTextPosition(fullText, chunkText) {
-    const fullWords = fullText.split(/\s+/);
-    const chunkWords = chunkText.split(/\s+/);
-    
-    if (chunkWords.length === 0) return 0;
-    
-    // Find the first occurrence of the chunk words in the full text
-    for (let i = 0; i <= fullWords.length - chunkWords.length; i++) {
-      let match = true;
-      for (let j = 0; j < chunkWords.length; j++) {
-        if (fullWords[i + j].toLowerCase() !== chunkWords[j].toLowerCase()) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        return i + Math.floor(chunkWords.length / 2); // Return position at the middle of the matched chunk
-      }
-    }
-    
-    // If exact match not found, return approximate position based on index
-    // This is a fallback when the chunk doesn't exactly match text in the original
-    return 0;
-  }
 
-
+  /**
+   * Process a complete document: extract -> clean -> chunk
+   * @param {Buffer} buffer - File buffer
+   * @param {string} mimeType - MIME type
+   * @param {string} filename - Filename
+   * @param {object} chunkOptions - Chunking options
+   * @returns {Promise<{chunks: Array<object>, metadata: object}>} Processed chunks and metadata
+   */
   async processDocument(buffer, mimeType, filename, chunkOptions = {}) {
     try {
       // Step 1: Extract text
@@ -278,36 +203,18 @@ class DocumentProcessingService {
       const textChunks = this.chunkText(cleanedText, chunkOptions);
       
       // Step 4: Create chunk objects with metadata
-      // For PDFs, try to estimate page numbers based on content distribution
-      const chunks = textChunks.map((chunkText, index) => {
-        let estimatedPage = null;
-        
-        // If this is a PDF and we have page count info, estimate page number
-        if (mimeType === 'application/pdf' && metadata.pageCount && metadata.pageCount > 0) {
-          // Calculate approximate page based on position in total text
-          const totalWords = cleanedText.split(/\s+/).length;
-          if (totalWords > 0) {
-            const chunkWords = chunkText.split(/\s+/).length;
-            const textPosition = this.calculateTextPosition(cleanedText, chunkText);
-            const positionRatio = textPosition / totalWords;
-            estimatedPage = Math.max(1, Math.min(metadata.pageCount, Math.floor(positionRatio * metadata.pageCount) + 1));
-          }
+      const chunks = textChunks.map((chunkText, index) => ({
+        chunkId: `${filename}-chunk-${index}`,
+        chunkText: chunkText,
+        sourceId: filename,
+        position: index,
+        wordCount: chunkText.split(/\s+/).length,
+        metadata: {
+          ...metadata,
+          chunkIndex: index,
+          totalChunks: textChunks.length
         }
-        
-        return {
-          chunkId: `${filename}-chunk-${index}`,
-          chunkText: chunkText,
-          sourceId: filename,
-          position: index,
-          wordCount: chunkText.split(/\s+/).length,
-          page: estimatedPage,
-          metadata: {
-            ...metadata,
-            chunkIndex: index,
-            totalChunks: textChunks.length
-          }
-        };
-      });
+      }));
 
       return { chunks, metadata };
     } catch (error) {

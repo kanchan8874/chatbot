@@ -89,30 +89,23 @@ class PineconeService {
         throw new Error("Query vector must be an array");
       }
       
-      // Build filter with namespace (Pinecone V2 uses metadata filters)
-      // Since we store namespace in metadata._namespace, filter by it
-      const finalFilter = { ...filter };
+      // Add namespace filter if provided
       if (namespace) {
-        // Filter by namespace stored in metadata
-        finalFilter._namespace = { $eq: namespace };
+        filter._namespace = namespace;
       }
       
       // Prepare the query request (Pinecone V2 format)
       const queryRequest = {
         vector: queryVector,
         topK: topK,
+        filter: filter,
         includeMetadata: true,
         includeValues: false
       };
       
-      // Add filter only if it has values
-      if (Object.keys(finalFilter).length > 0) {
-        queryRequest.filter = finalFilter;
-      }
-      
       // Query vectors from Pinecone
       const queryResponse = await this.index.query(queryRequest);
-      return queryResponse.matches || [];
+      return queryResponse.matches;
     } catch (error) {
       console.error("Failed to query vectors from Pinecone:", error.message);
       throw error;
@@ -125,18 +118,16 @@ class PineconeService {
         await this.initialize();
       }
       
-      // Build final filter with namespace (Pinecone V2 uses metadata filters)
-      const finalFilter = { ...filter };
+      // Add namespace filter if provided
       if (namespace) {
-        finalFilter._namespace = { $eq: namespace };
+        filter._namespace = namespace;
       }
       
-      // Delete vectors from Pinecone using deleteMany with filter
-      // Note: Pinecone V2 deleteMany requires filter object
-      const deleteResult = await this.index.deleteMany(finalFilter);
+      // Delete vectors from Pinecone
+      await this.index.deleteMany(filter);
       
-      console.log(`✅ Deleted vectors with filter: ${JSON.stringify(finalFilter)}`);
-      return { success: true, deletedCount: deleteResult?.deletedCount || 0 };
+      console.log(`Deleted vectors with filter: ${JSON.stringify(filter)}`);
+      return { success: true };
     } catch (error) {
       console.error("Failed to delete vectors from Pinecone:", error.message);
       throw error;
