@@ -1,17 +1,31 @@
 const express = require("express");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
+const fs = require("fs/promises");
+const path = require("path");
 const IngestionJob = require("../database/models/IngestionJob");
 const QAPair = require("../database/models/QAPair");
 const DocumentChunk = require("../database/models/DocumentChunk");
 const documentProcessor = require("../services/documentProcessingService");
 const pineconeService = require("../services/pineconeService");
+const embeddingService = require("../services/embeddingService");
+const { requireAdmin } = require("../middlewares/auth");
 
 // Configure multer for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
+// Base path for raw storage (acts as source of truth locally; replace with S3/Blob in prod)
+const RAW_BASE_PATH = path.resolve(__dirname, "..", "..", "storage", "raw");
+
+async function saveRawFile({ type, sourceId, extension = "", buffer }) {
+  const dir = path.join(RAW_BASE_PATH, type);
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, `${sourceId}${extension}`);
+  await fs.writeFile(filePath, buffer);
+  return filePath;
+}
 // Helper function to validate CSV data
 function validateCSVData(data) {
   // Check if required columns exist
@@ -46,7 +60,7 @@ function generateQuestionHash(question) {
 }
 
 // CSV Ingestion Route
-router.post("/csv", upload.single("file"), async (req, res) => {
+router.post("/csv", requireAdmin, upload.single("file"), async (req, res) => {
   try {
     const { audience = "public", sourceId = uuidv4() } = req.body;
     
@@ -69,13 +83,21 @@ router.post("/csv", upload.single("file"), async (req, res) => {
     job.status = "processing";
     await job.save();
     
+    if (!req.file?.buffer) {
+      throw new Error("CSV file is required");
+    }
+
+    // Persist raw CSV as source of truth
+    const rawCsvPath = await saveRawFile({
+      type: "csv",
+      sourceId,
+      extension: path.extname(req.file.originalname || ".csv") || ".csv",
+      buffer: req.file.buffer,
+    });
+    
     // Parse CSV data (simplified for now)
     // In a real implementation, you would use a CSV parser like PapaParse or csv-parser
-    const csvContent = req.file?.buffer.toString("utf8");
-    
-    if (!csvContent) {
-      throw new Error("No CSV content found");
-    }
+    const csvContent = req.file.buffer.toString("utf8");
     
     // Simple CSV parsing (in reality, use a proper CSV parser)
     const lines = csvContent.split("\n");
@@ -116,9 +138,44 @@ router.post("/csv", upload.single("file"), async (req, res) => {
     
     // Save all QA pairs
     await QAPair.insertMany(qaPairs);
+
+    // Generate embeddings for questions and upsert to Pinecone "qa" namespace
+    if (qaPairs.length > 0) {
+      const questions = qaPairs.map((qa) => qa.question || "");
+      const embeddings = await embeddingService.generateEmbeddingsBatch(questions);
+
+      if (embeddings && embeddings.length === qaPairs.length) {
+        const vectors = qaPairs.map((qa, index) => ({
+          id: `${sourceId}-${qa.questionHash || index}`,
+          values: embeddings[index],
+          metadata: {
+            question: qa.question,
+            answer: qa.answer,
+            audience: qa.audience,
+            source_type: "csv",
+            source_id: sourceId,
+            question_hash: qa.questionHash,
+            normalized_question: qa.normalizedQuestion,
+            tags: qa.tags,
+            category: qa.category,
+            language: qa.language,
+            version: job.version || "v1",
+            updated_at: new Date(),
+          },
+        }));
+
+        await pineconeService.upsertVectors(vectors, "qa");
+      } else {
+        console.warn("⚠️  Embeddings not generated for all questions; skipping Pinecone upsert.");
+      }
+    }
     
     // Update job status
     job.status = "indexed";
+    job.metadata = {
+      ...job.metadata,
+      rawPath: rawCsvPath,
+    };
     await job.save();
     
     return res.json({ 
@@ -144,7 +201,7 @@ router.post("/csv", upload.single("file"), async (req, res) => {
 });
 
 // Document Ingestion Route
-router.post("/docs", upload.single("file"), async (req, res) => {
+router.post("/docs", requireAdmin, upload.single("file"), async (req, res) => {
   try {
     const { audience = "public", sourceId = uuidv4() } = req.body;
     
@@ -167,6 +224,18 @@ router.post("/docs", upload.single("file"), async (req, res) => {
     // Process document file
     job.status = "processing";
     await job.save();
+
+    if (!req.file?.buffer) {
+      throw new Error("Document file is required");
+    }
+
+    // Persist raw document as source of truth
+    const rawDocPath = await saveRawFile({
+      type: "docs",
+      sourceId,
+      extension: path.extname(req.file.originalname || ".bin") || ".bin",
+      buffer: req.file.buffer,
+    });
     
     // Extract, clean, and chunk the document
     const { chunks, metadata } = await documentProcessor.processDocument(
@@ -210,6 +279,10 @@ router.post("/docs", upload.single("file"), async (req, res) => {
     
     // Update job status
     job.status = "indexed";
+    job.metadata = {
+      ...job.metadata,
+      rawPath: rawDocPath,
+    };
     await job.save();
     
     return res.json({ 
@@ -237,7 +310,7 @@ router.post("/docs", upload.single("file"), async (req, res) => {
 });
 
 // Web Crawl Ingestion Route
-router.post("/webcrawl", async (req, res) => {
+router.post("/webcrawl", requireAdmin, async (req, res) => {
   try {
     const { url, audience = "public", sourceId = uuidv4() } = req.body;
     
@@ -285,6 +358,14 @@ router.post("/webcrawl", async (req, res) => {
     
     // Convert to buffer for processing
     const buffer = Buffer.from(mockHtmlContent, 'utf-8');
+
+    // Persist raw HTML snapshot
+    const rawWebPath = await saveRawFile({
+      type: "web",
+      sourceId,
+      extension: ".html",
+      buffer,
+    });
     
     // Extract, clean, and chunk the document
     const { chunks, metadata } = await documentProcessor.processDocument(
@@ -330,6 +411,10 @@ router.post("/webcrawl", async (req, res) => {
     
     // Update job status
     job.status = "indexed";
+    job.metadata = {
+      ...job.metadata,
+      rawPath: rawWebPath,
+    };
     await job.save();
     
     return res.json({ 
