@@ -45,12 +45,8 @@ async function getEmployeeData(employeeId, queryType) {
  */
 async function generateLLMResponse(question, context, userRole, detectedLanguage = 'und') {
   try {
-    if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim() !== '') {
-      return await llmService.generateResponse(question, context, userRole, detectedLanguage);
-    } else {
-      console.log("📝 Using free Groq LLM service...");
-      return await freeLLMService.generateResponse(question, context, userRole, detectedLanguage);
-    }
+    // Use the updated LLM service which now uses Groq
+    return await llmService.generateResponse(question, context, userRole, detectedLanguage);
   } catch (error) {
     console.error("❌ Error generating LLM response:", error.message);
     if (context.type === "qa") {

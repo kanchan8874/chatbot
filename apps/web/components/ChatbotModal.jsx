@@ -360,7 +360,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       <button
                         key={index}
                         onClick={() => handleTopicClick(topic.query)}
-                        className="group flex items-center gap-2.5 px-4 py-2.5  bg-white border border-gray-200 rounded-full hover:border-[#E31E24] hover:bg-[#FFF5F5] transition-all duration-200 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md animate-fadeInUp"
+                        className="group flex items-center gap-2.5 px-4 py-2.5  bg-white border border-gray-300 rounded-full hover:border-[#E31E24] hover:bg-[#FFF5F5] transition-all duration-200 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md animate-fadeInUp"
                         style={{ animationDelay: `${0.7 + index * 0.08}s`, animationFillMode: 'both' }}
                         aria-label={`Ask about ${topic.label}`}
                       >
@@ -386,7 +386,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                         <button
                           key={index}
                           onClick={() => handleTopicClick(skill.query)}
-                          className="w-full flex items-center gap-4 px-4 py-3.5 bg-white mt-5 hover:bg-[#FFF5F5] rounded-xl border border-gray-200 hover:border-[#E31E24]/30 transition-all duration-200 text-left group focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md cursor-pointer animate-fadeInUp"
+                          className="w-full flex items-center gap-4 px-4 py-3.5 bg-white mt-5 hover:bg-[#FFF5F5] rounded-xl border border-gray-300 hover:border-[#E31E24]/30 transition-all duration-200 text-left group focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md cursor-pointer animate-fadeInUp"
                           style={{ animationDelay: `${1.4 + index * 0.1}s`, animationFillMode: 'both' }}
                           aria-label={`Ask about ${skill.text}`}
                         >
@@ -544,7 +544,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
               <div className="flex items-center gap-3">
                 {/* Hamburger Menu Icon */}
                 <button
-                  className="p-2 hover:bg-[#FFE5E5] rounded-xl transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
+                  className="p-3 hover:bg-[#FFE5E5] rounded-xl border border-gray-300 transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
                   aria-label="Menu"
                 >
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
@@ -559,8 +559,8 @@ export default function ChatbotModal({ isOpen, onClose }) {
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Type your question here..."
-                  className="flex-1 px-5 py-3.5 bg-white border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:border-[#E31E24] transition-all duration-200 text-sm text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                  placeholder="Type your question here....."
+                  className="flex-1 px-5 py-3.5 bg-white border-2 border-gray-300 rounded-3xl focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:border-[#E31E24] transition-all duration-200 text-sm text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
                   disabled={isLoading}
                   aria-label="Chat input"
                 />

@@ -1,177 +1,47 @@
-// OpenAI LLM Service
-// Yeh service AI responses generate karta hai using GPT-4
+// LLM Service using Groq (Free Tier)
+// Yeh service AI responses generate karta hai using Groq API
 // PRD ke according: LLM ko sirf retrieved data se answer karna hai, no hallucination
 
-const { OpenAI } = require('openai');
 const config = require('../config/env');
+const freeLLMService = require('./freeLLMService'); // Use the existing Groq service
 
 class LLMService {
   constructor() {
-    if (!config.openai.apiKey) {
-      console.warn("⚠️  OpenAI API key not found. LLM responses will fail.");
-      this.client = null;
+    // Use the existing Groq service instead of OpenAI
+    this.useGroq = freeLLMService.client !== null;
+    if (!this.useGroq) {
+      console.warn("⚠️  Groq API key not set. LLM responses will use fallback.");
     } else {
-      this.client = new OpenAI({
-        apiKey: config.openai.apiKey
-      });
+      console.log("✅ LLM service initialized with Groq");
     }
-    this.model = config.openai.model;
   }
 
  
   async generateResponse(userQuestion, context, userRole = 'client', detectedLanguage = 'und') {
-    if (!this.client) {
-      throw new Error("OpenAI client not initialized. Please set OPENAI_API_KEY in .env");
+    // Use the Groq service instead of OpenAI
+    if (!this.useGroq) {
+      console.warn("⚠️  Groq not available, using fallback response");
+      // Return a fallback response if Groq is not available
+      if (context.type === 'qa' && context.answer) {
+        return context.answer;
+      }
+      return "I couldn't generate a response. Please try again.";
     }
 
     try {
-      // Context type ke according prompt build karo
-      let systemPrompt = '';
-      let userPrompt = '';
-
-      switch (context.type) {
-        case 'qa':
-          // CSV Q&A fast path - direct answer use karo
-          const langInstruction = detectedLanguage !== 'eng' && detectedLanguage !== 'und' ? 'Please respond in the same language as the user\'s query (Hindi/English mix is acceptable).' : 'Please respond in English.';
-          systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
-Your role is to answer questions accurately using ONLY the provided information.
-
-RESPONSE FORMATTING RULES (CRITICAL):
-1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
-2. Use STRUCTURED format when appropriate:
-   - Start with a brief greeting/context (1 line)
-   - Use bullet points (•) for lists (3-6 items max)
-   - End with a short summary line (1-2 lines)
-3. Break long answers into multiple short sections
-4. Use bullet points instead of long paragraphs
-5. Be conversational, polite, and professional
-6. Answer ONLY from the provided answer below
-7. Do NOT add information not in the provided answer
-8. " + langInstruction + "`;
-
-          userPrompt = `Question: ${userQuestion}
-
-Provided Answer:
-${context.answer}
-
-Format your answer as:
-- Short greeting/context (1 line)
-- Bullet points if listing items (• item 1, • item 2, etc.)
-- Brief summary (1-2 lines)
-
-Answer using ONLY the provided answer above:`;
-
-          break;
-
-        case 'document':
-          // Document RAG - chunks se answer generate karo
-          const docLangInstruction = detectedLanguage !== 'eng' && detectedLanguage !== 'und' ? 'Please respond in the same language as the user\'s query (Hindi/English mix is acceptable).' : 'Please respond in English.';
-          const chunksText = context.chunks
-            .map((chunk, idx) => `[Source ${idx + 1}]\n${chunk.text || chunk.metadata?.text || ''}`)
-            .join('\n\n');
-
-          systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
-Your role is to answer questions using ONLY the retrieved document chunks below.
-
-RESPONSE FORMATTING RULES (CRITICAL):
-1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
-2. Use STRUCTURED format when appropriate:
-   - Start with a brief greeting/context (1 line)
-   - Use bullet points (•) for lists (3-6 items max)
-   - End with a short summary line (1-2 lines)
-3. Break long answers into multiple short sections
-4. Use bullet points instead of long paragraphs
-5. Be conversational, polite, and professional
-6. Answer ONLY using information from the provided chunks
-7. If information is not in the chunks, politely suggest rephrasing or asking about Mobiloitte's services
-8. Do NOT make up or hallucinate information
-9. " + docLangInstruction + "`;
-
-          userPrompt = `Question: ${userQuestion}
-
-Retrieved Document Chunks:
-${chunksText}
-
-Format your answer as:
-- Short greeting/context (1 line)
-- Bullet points if listing items (• item 1, • item 2, etc.)
-- Brief summary (1-2 lines)
-
-Answer using ONLY the information from the chunks above. If the answer is not in the chunks, say so clearly:`;
-
-          break;
-
-        case 'document_fact':
-          // Fact-focused RAG - very short, factual, only from chunks
-          const factChunks = context.chunks
-            .map((chunk, idx) => `[Fact Source ${idx + 1}]\n${chunk.text || chunk.metadata?.text || ''}`)
-            .join('\n\n');
-
-          systemPrompt = `You are Mobiloitte AI. Provide a short, factual answer using ONLY the provided context.
-Rules:
-- Keep it concise (1-2 sentences)
-- Use only relevant facts from the context
-- Do NOT add anything beyond the context
-- If the answer is not present, say: "I don’t have that information right now."`;
-
-          userPrompt = `Question: ${userQuestion}
-
-Context:
-${factChunks}
-
-Answer in 1-2 sentences using only the context above. If not found, say you don't have that information.`;
-          break;
-
-        case 'employee_data':
-          // Employee operational data
-          systemPrompt = `You are Mobiloitte AI, an internal assistant for Mobiloitte employees.
-Your role is to help employees with their operational queries using the provided data.
-Rules:
-- Use ONLY the provided employee data
-- Be clear and helpful
-- Format information in an easy-to-read way`;
-
-          userPrompt = `Question: ${userQuestion}
-
-Employee Data:
-${JSON.stringify(context.data, null, 2)}
-
-Answer the question using the employee data above:`;
-
-          break;
-
-        default:
-          systemPrompt = `You are Mobiloitte AI, a helpful assistant.
-Answer questions accurately using the provided context.`;
-
-          userPrompt = `Question: ${userQuestion}\n\nContext: ${JSON.stringify(context)}`;
-      }
-
-      // OpenAI API call
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
-        ],
-        temperature: 0.3, // Low temperature = more focused, less creative (PRD requirement)
-        max_tokens: 1000
-      });
-
-      const aiResponse = response.choices[0].message.content.trim();
+      // Delegate to the existing freeLLMService which handles Groq
+      const response = await freeLLMService.generateResponse(userQuestion, context, userRole, detectedLanguage);
       
       console.log(`✅ Generated LLM response for question: "${userQuestion.substring(0, 50)}..."`);
       
-      return aiResponse;
+      return response;
     } catch (error) {
       console.error("❌ Error generating LLM response:", error.message);
-      throw new Error(`Failed to generate LLM response: ${error.message}`);
+      // Fallback to the freeLLMService's fallback response
+      if (context.type === 'qa' && context.answer) {
+        return context.answer;
+      }
+      return "I encountered an error processing your request. Please try again.";
     }
   }
 
@@ -179,8 +49,8 @@ Answer questions accurately using the provided context.`;
    * Test function
    */
   async testConnection() {
-    if (!this.client) {
-      return { success: false, error: "OpenAI client not initialized" };
+    if (!this.useGroq) {
+      return { success: false, error: "Groq service not initialized" };
     }
 
     try {
@@ -191,7 +61,7 @@ Answer questions accurately using the provided context.`;
       );
       return {
         success: true,
-        model: this.model,
+        service: "Groq",
         testResponse: testResponse.substring(0, 100)
       };
     } catch (error) {

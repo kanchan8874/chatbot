@@ -2,7 +2,7 @@ const http = require("http");
 const app = require("./app");
 const { connectMongo } = require("./database/mongo");
 
-const PORT = process.env.PORT || 4001; // Changed to 4001
+const PORT = process.env.PORT || 4000; // Changed to 4000 to match frontend config
 const HOST = '0.0.0.0'; // Bind to all interfaces
 
 console.log("Starting server on host:", HOST, "port:", PORT);

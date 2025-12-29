@@ -8,7 +8,7 @@ class FreeLLMService {
   constructor() {
     // Groq free API key from .env file
     // Get free key from: https://console.groq.com
-    this.apiKey = process.env.GROQ_API_KEY;
+    this.apiKey = config.groq?.apiKey || process.env.GROQ_API_KEY;
     
     if (this.apiKey && this.apiKey.trim() !== '' && this.apiKey.startsWith('gsk_')) {
       this.client = new Groq({

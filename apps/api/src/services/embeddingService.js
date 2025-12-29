@@ -1,14 +1,13 @@
-// Embeddings Service - Supports Cohere (FREE) and OpenAI
+// Embeddings Service - Supports Cohere (FREE)
 // Yeh service text ko vector embeddings mein convert karta hai
 // Embeddings = text ka mathematical representation jo semantic similarity find karne ke liye use hota hai
 
-const { OpenAI } = require('openai');
 const { CohereClient } = require('cohere-ai');
 const config = require('../config/env');
 
 class EmbeddingService {
   constructor() {
-    // Priority: Cohere (FREE) > OpenAI > Mock
+    // Priority: Cohere (FREE) > Mock
     
     // Initialize Cohere (FREE API - Priority 1)
     if (config.cohere.apiKey) {
@@ -27,26 +26,11 @@ class EmbeddingService {
       this.cohereClient = null;
     }
     
-    // Initialize OpenAI (Priority 2 - fallback)
-    if (!config.openai.apiKey) {
-     
-      this.openaiClient = null;
-    } else {
-      this.openaiClient = new OpenAI({
-        apiKey: config.openai.apiKey
-      });
-      console.log("✅ OpenAI embeddings initialized (fallback)");
-    }
-    
-    this.openaiModel = config.openai.embeddingModel;
-    this.openaiDimension = config.openai.embeddingDimension;
-    
     // Determine which service to use
     this.useCohere = !!this.cohereClient;
-    this.useOpenAI = !this.useCohere && !!this.openaiClient;
     
     // Set active dimension based on service
-    this.dimension = this.useCohere ? this.cohereDimension : (this.useOpenAI ? this.openaiDimension : 1536);
+    this.dimension = this.useCohere ? this.cohereDimension : 1536;
   }
 
 
@@ -71,29 +55,11 @@ class EmbeddingService {
       } catch (error) {
         console.error("❌ Cohere embedding error:", error.message);
        
-        // Fall through to OpenAI or mock
+        // Fall through to mock
       }
     }
 
-    // Priority 2: Try OpenAI
-    if (this.useOpenAI) {
-      try {
-        const response = await this.openaiClient.embeddings.create({
-          model: this.openaiModel,
-          input: text.trim(),
-          dimensions: this.openaiDimension
-        });
-
-        const embedding = response.data[0].embedding;
-        console.log(`✅ Generated OpenAI embedding (${text.substring(0, 50)}...) - Dimension: ${embedding.length}`);
-        return embedding;
-      } catch (error) {
-        console.error("❌ OpenAI embedding error:", error.message);
-       
-      }
-    }
-
-    // Priority 3: Mock embeddings (fallback)
+    // Priority 2: Mock embeddings (fallback)
     console.warn("⚠️  No embedding API available. Using mock embeddings for testing.");
     return this.generateMockEmbedding(text);
   }
@@ -127,7 +93,7 @@ class EmbeddingService {
 
   /**
    * Multiple texts ko batch mein embeddings generate karta hai (faster)
-   * Priority: Cohere (FREE) > OpenAI > Mock
+   * Priority: Cohere (FREE) > Mock
    * @param {string[]} texts - Array of texts
    * @returns {Promise<number[][]>} - Array of embedding vectors
    */
@@ -176,46 +142,12 @@ class EmbeddingService {
         return allEmbeddings;
       } catch (error) {
         console.error("❌ Cohere batch embedding error:", error.message);
-        console.warn("⚠️  Falling back to OpenAI or mock...");
-        // Fall through to OpenAI or mock
+        console.warn("⚠️  Falling back to mock...");
+        // Fall through to mock
       }
     }
 
-    // Priority 2: Try OpenAI batch
-    if (this.useOpenAI) {
-      try {
-        const batchSize = 100; // OpenAI allows up to 2048, but we use 100 for safety
-        const batches = [];
-        
-        for (let i = 0; i < validTexts.length; i += batchSize) {
-          batches.push(validTexts.slice(i, i + batchSize));
-        }
-
-        const allEmbeddings = [];
-        
-        for (let i = 0; i < batches.length; i++) {
-          const batch = batches[i];
-          console.log(`📦 Processing OpenAI batch ${i + 1}/${batches.length} (${batch.length} texts)...`);
-          
-          const response = await this.openaiClient.embeddings.create({
-            model: this.openaiModel,
-            input: batch,
-            dimensions: this.openaiDimension
-          });
-
-          const embeddings = response.data.map(item => item.embedding);
-          allEmbeddings.push(...embeddings);
-        }
-
-        console.log(`✅ Generated ${allEmbeddings.length} OpenAI embeddings in ${batches.length} batch(es)`);
-        return allEmbeddings;
-      } catch (error) {
-        console.error("❌ OpenAI batch embedding error:", error.message);
-        console.warn("⚠️  Falling back to mock embeddings...");
-      }
-    }
-
-    // Priority 3: Mock embeddings (fallback)
+    // Priority 2: Mock embeddings (fallback)
     console.warn("⚠️  No embedding API available. Using mock embeddings for testing.");
     return validTexts.map(text => this.generateMockEmbedding(text));
   }
@@ -226,8 +158,7 @@ class EmbeddingService {
   async testConnection() {
     const serviceInfo = {
       cohere: this.useCohere ? "✅ Active" : "❌ Not available",
-      openai: this.useOpenAI ? "✅ Active" : "❌ Not available",
-      mock: (!this.useCohere && !this.useOpenAI) ? "✅ Using mock" : "❌ Not needed"
+      mock: !this.useCohere ? "✅ Using mock" : "❌ Not needed"
     };
 
     try {
@@ -235,8 +166,8 @@ class EmbeddingService {
       return {
         success: true,
         dimension: testEmbedding.length,
-        service: this.useCohere ? "Cohere" : (this.useOpenAI ? "OpenAI" : "Mock"),
-        model: this.useCohere ? this.cohereModel : (this.useOpenAI ? this.openaiModel : "mock"),
+        service: this.useCohere ? "Cohere" : "Mock",
+        model: this.useCohere ? this.cohereModel : "mock",
         services: serviceInfo
       };
     } catch (error) {
