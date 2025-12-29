@@ -212,7 +212,12 @@ class DocumentProcessingService {
         metadata: {
           ...metadata,
           chunkIndex: index,
-          totalChunks: textChunks.length
+          totalChunks: textChunks.length,
+          // Placeholder for future structured data (heading path/page)
+          headingPath: chunkOptions.headingPath || null,
+          page: chunkOptions.page || null,
+          audience: chunkOptions.audience || "public",
+          version: chunkOptions.version || "v1",
         }
       }));
 

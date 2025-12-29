@@ -242,7 +242,7 @@ router.post("/docs", requireAdmin, upload.single("file"), async (req, res) => {
       req.file.buffer,
       req.file.mimetype,
       req.file.originalname,
-      { chunkSize: 500, overlap: 50 }
+      { chunkSize: 500, overlap: 50, audience, version: job.version || "v1" }
     );
     
     // Save document chunks to database
@@ -253,29 +253,44 @@ router.post("/docs", requireAdmin, upload.single("file"), async (req, res) => {
       audience: audience,
       title: metadata.title,
       wordCount: chunk.wordCount,
+      headingPath: chunk.metadata?.headingPath,
+      page: chunk.metadata?.page,
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
     
     await DocumentChunk.insertMany(documentChunks);
     
-    // Generate embeddings and store in Pinecone
-    // For now, we'll use mock embeddings
-    const vectors = documentChunks.map(chunk => ({
-      id: chunk.chunkId,
-      values: Array(1536).fill(Math.random()), // Mock embedding vector
-      metadata: {
-        text: chunk.chunkText,
-        source: sourceId,
-        audience: chunk.audience,
-        type: 'document',
-        title: chunk.title
+    // Generate embeddings and store in Pinecone with strict metadata
+    if (documentChunks.length > 0) {
+      const embeddings = await embeddingService.generateEmbeddingsBatch(
+        documentChunks.map((c) => c.chunkText)
+      );
+
+      if (embeddings && embeddings.length === documentChunks.length) {
+        const vectors = documentChunks.map((chunk, index) => ({
+          id: chunk.chunkId,
+          values: embeddings[index],
+          metadata: {
+            text: chunk.chunkText,
+            audience: chunk.audience,
+            source_type: "doc",
+            source_id: sourceId,
+            chunk_id: chunk.chunkId,
+            title: chunk.title,
+            heading_path: chunk.headingPath,
+            page: chunk.page,
+            version: job.version || "v1",
+          }
+        }));
+        
+        // Upsert vectors to Pinecone
+        const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
+        await pineconeService.upsertVectors(vectors, namespace);
+      } else {
+        console.warn("⚠️  Embeddings not generated for all document chunks; skipping Pinecone upsert.");
       }
-    }));
-    
-    // Upsert vectors to Pinecone
-    const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
-    await pineconeService.upsertVectors(vectors, namespace);
+    }
     
     // Update job status
     job.status = "indexed";
@@ -372,7 +387,7 @@ router.post("/webcrawl", requireAdmin, async (req, res) => {
       buffer,
       'text/html',
       url,
-      { chunkSize: 500, overlap: 50 }
+      { chunkSize: 500, overlap: 50, audience, version: job.version || "v1" }
     );
     
     // Save document chunks to database
@@ -383,6 +398,8 @@ router.post("/webcrawl", requireAdmin, async (req, res) => {
       audience: audience,
       title: metadata.title,
       wordCount: chunk.wordCount,
+      headingPath: chunk.metadata?.headingPath,
+      page: chunk.metadata?.page,
       url: url,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -390,24 +407,37 @@ router.post("/webcrawl", requireAdmin, async (req, res) => {
     
     await DocumentChunk.insertMany(documentChunks);
     
-    // Generate embeddings and store in Pinecone
-    // For now, we'll use mock embeddings
-    const vectors = documentChunks.map(chunk => ({
-      id: chunk.chunkId,
-      values: Array(1536).fill(Math.random()), // Mock embedding vector
-      metadata: {
-        text: chunk.chunkText,
-        source: sourceId,
-        audience: chunk.audience,
-        type: 'web',
-        title: chunk.title,
-        url: url
+    // Generate embeddings and store in Pinecone with strict metadata
+    if (documentChunks.length > 0) {
+      const embeddings = await embeddingService.generateEmbeddingsBatch(
+        documentChunks.map((c) => c.chunkText)
+      );
+
+      if (embeddings && embeddings.length === documentChunks.length) {
+        const vectors = documentChunks.map((chunk, index) => ({
+          id: chunk.chunkId,
+          values: embeddings[index],
+          metadata: {
+            text: chunk.chunkText,
+            audience: chunk.audience,
+            source_type: "web",
+            source_id: sourceId,
+            chunk_id: chunk.chunkId,
+            title: chunk.title,
+            heading_path: chunk.headingPath,
+            page: chunk.page,
+            url: url,
+            version: job.version || "v1",
+          }
+        }));
+        
+        // Upsert vectors to Pinecone
+        const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
+        await pineconeService.upsertVectors(vectors, namespace);
+      } else {
+        console.warn("⚠️  Embeddings not generated for all web chunks; skipping Pinecone upsert.");
       }
-    }));
-    
-    // Upsert vectors to Pinecone
-    const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
-    await pineconeService.upsertVectors(vectors, namespace);
+    }
     
     // Update job status
     job.status = "indexed";

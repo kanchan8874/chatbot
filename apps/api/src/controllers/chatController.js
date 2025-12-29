@@ -23,22 +23,7 @@ const llmService = require("../services/llmService");
 const freeLLMService = require("../services/freeLLMService");
 // Follow-up questions removed - simple chatbot behavior
 
-/**
- * Get employee data (mock function)
- */
-async function getEmployeeData(employeeId, queryType) {
-  if (queryType === "leave_balance") {
-    return {
-      annualLeave: 20,
-      usedLeave: 5,
-      remainingLeave: 15,
-      sickLeave: 10,
-      usedSickLeave: 2,
-      remainingSickLeave: 8
-    };
-  }
-  return null;
-}
+const employeeDataService = require("../services/employeeDataService");
 
 /**
  * Generate LLM response
@@ -167,7 +152,7 @@ async function handleMessage(req, res) {
         if (userRole !== "employee") {
           response = "This information is only available to employees.";
         } else {
-          const employeeData = await getEmployeeData(employeeId, "leave_balance");
+          const employeeData = await employeeDataService.getLeaveBalance(employeeId, { actorRole: userRole });
           context = { type: "employee_data", data: employeeData };
           response = await generateLLMResponse(message, context, userRole, detectedLanguage);
         }
