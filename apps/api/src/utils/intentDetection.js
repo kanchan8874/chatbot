@@ -475,3 +475,88 @@ function isSpecificFactQuery(normalizedMessage) {
 }
 
 module.exports.isSpecificFactQuery = isSpecificFactQuery;
+
+/**
+ * Detect mixed/multi-intent queries (e.g. "Who is founder AND where is office?")
+ */
+function detectMultiIntent(normalizedMessage) {
+  if (!normalizedMessage) return false;
+  const text = normalizedMessage.toLowerCase();
+
+  // 1. Check for conjunctions that suggest multiple parts
+  const conjunctions = [" and ", " also ", " plus ", " & ", " along with ", " as well as "];
+  const hasConjunction = conjunctions.some(c => text.includes(c));
+
+  if (!hasConjunction) return false;
+
+  // 2. Check for mix of Fact Keywords vs RAG Keywords
+  const ragKeywords = [
+    "process", "policy", "how to", "explain", "describe", "steps", 
+    "procedure", "services", "offerings", "solutions", "what is"
+  ];
+  
+  const factKeywords = [
+    "founder", "ceo", "director", "address", "location", "hq", 
+    "office", "contact", "email", "phone", "established", "year"
+  ];
+
+  const hasRagKeyword = ragKeywords.some(k => text.includes(k));
+  const hasFactKeyword = factKeywords.some(k => text.includes(k));
+
+  // If it has conjunction AND (Rag + Fact combination)
+  if (hasRagKeyword && hasFactKeyword) return true;
+  
+  return false;
+}
+
+module.exports.detectMultiIntent = detectMultiIntent;
+
+/**
+ * Detects clarification/verification intents (e.g. "Is this a training center?", "Kya ye X hai?")
+ */
+function detectClarificationIntent(normalizedMessage) {
+  if (!normalizedMessage) return false;
+  const text = normalizedMessage.toLowerCase();
+  
+  // Patterns for confirmation/verification questions
+  const verificationPatterns = [
+    /^is (this|that|it|mobiloitte|the company)/,
+    /^are (you|we|they)/,
+    /^do (you|we|they) (have|provide|offer)/,
+    /^can (you|we|i)/,
+    /^will (you|it)/,
+    /^kya (ye|yeh|aap|hum|tum)/,
+    /^kya (company|mobiloitte)/,
+    /^(is|are) it true/,
+    /(right|correct)\?$/
+  ];
+
+  return verificationPatterns.some(pattern => pattern.test(text));
+}
+
+module.exports.detectClarificationIntent = detectClarificationIntent;
+
+/**
+ * Detects if the user is asking for a detailed explanation, process, or steps.
+ * These queries should prioritize RAG/Documents over simple CSV FAQs.
+ */
+function detectDetailedIntent(normalizedMessage) {
+  if (!normalizedMessage) return false;
+  const text = normalizedMessage.toLowerCase();
+  
+  const detailedKeywords = [
+    "process", "steps", "workflow", "how does", "explain", 
+    "detailed", "development cycle", "methodology", "procedure",
+    "working", "mechanism", "architecture", "flow", "guide",
+    "tutorial", "roadmap", "lifecycle", "kaise", "kya process"
+  ];
+  
+  // Specific check for "How to" / "How do" which usually implies process
+  if (text.includes("how to") || text.includes("how do")) {
+      return true;
+  }
+
+  return detailedKeywords.some(keyword => text.includes(keyword));
+}
+
+module.exports.detectDetailedIntent = detectDetailedIntent;

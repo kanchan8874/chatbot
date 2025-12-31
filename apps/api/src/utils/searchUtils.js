@@ -328,10 +328,11 @@ async function searchMongoDBByKeywords(normalizedMessage, audienceFilter, option
     }
   }
   
-  // PRIORITY 2: General keyword search (STRICT)
+  // PRIORITY 2: General keyword search (STRICTER LOGIC)
   const keywordQueries = [];
   
-  if (words.length > 1) {
+  // Rule 1: If we have multiple significant words, prefer matches that contain ALL of them (High Precision)
+  if (words.length >= 2) {
     keywordQueries.push({
       $and: words.map(word => ({
         $or: [
@@ -343,15 +344,27 @@ async function searchMongoDBByKeywords(normalizedMessage, audienceFilter, option
     });
   }
   
+  // Rule 2: Single word matches ONLY for strong unique keywords
+  // Avoid generic words like "company", "service", "training", "center" from triggering matches alone
+  const genericWeakWords = [
+    "company", "services", "solutions", "training", "center", 
+    "support", "team", "work", "job", "career", "about", "info",
+    "location", "office", "contact", "detail", "details", "process"
+  ];
+
   words.forEach(word => {
-    keywordQueries.push({
-      $or: [
-        { question: { $regex: word, $options: "i" } },
-        { normalizedQuestion: { $regex: word, $options: "i" } },
-        { tags: { $regex: word, $options: "i" } },
-        { category: { $regex: word, $options: "i" } }
-      ]
-    });
+    const isWeak = genericWeakWords.includes(word.toLowerCase());
+    
+    // Only add single-word query if the word is NOT weak and reasonable length
+    if (!isWeak && word.length > 3) { 
+       keywordQueries.push({
+        $or: [
+          { question: { $regex: word, $options: "i" } },
+          { normalizedQuestion: { $regex: word, $options: "i" } },
+          { tags: { $regex: word, $options: "i" } }
+        ]
+      });
+    }
   });
   
   for (const query of keywordQueries) {
