@@ -1,184 +1,239 @@
-// Embeddings Service - Supports Cohere (FREE)
-// Yeh service text ko vector embeddings mein convert karta hai
-// Embeddings = text ka mathematical representation jo semantic similarity find karne ke liye use hota hai
+// Embeddings Service - Supports Cohere + Local Xenova (FREE) + Mock
+// Local embeddings = No API | No Cost | No Rate Limit
 
-const { CohereClient } = require('cohere-ai');
-const config = require('../config/env');
+const { CohereClient } = require("cohere-ai");
+const config = require("../config/env");
 
 class EmbeddingService {
   constructor() {
-    // Priority: Cohere (FREE) > Mock
-    
-    // Initialize Cohere (FREE API - Priority 1)
+    // ---------------- COHERE INIT ----------------
     if (config.cohere.apiKey) {
       try {
         this.cohereClient = new CohereClient({
-          token: config.cohere.apiKey
+          token: config.cohere.apiKey,
         });
-        this.cohereModel = config.cohere.embeddingModel || "embed-english-v3.0";
-        this.cohereDimension = config.cohere.embeddingDimension || 1024;
-        console.log("✅ Cohere embeddings initialized (FREE API)");
+
+        this.cohereModel =
+          config.cohere.embeddingModel || "embed-english-v3.0";
+        this.cohereDimension =
+          config.cohere.embeddingDimension || 1024;
+
+        console.log("✅ Cohere embeddings initialized (API mode)");
       } catch (error) {
-        console.warn("⚠️  Cohere initialization failed:", error.message);
+        console.warn("⚠️ Cohere init failed:", error.message);
         this.cohereClient = null;
       }
     } else {
       this.cohereClient = null;
     }
-    
-    // Determine which service to use
+
     this.useCohere = !!this.cohereClient;
-    
-    // Set active dimension based on service
-    this.dimension = this.useCohere ? this.cohereDimension : 1536;
+
+    // ---------------- XENOVA INIT FLAGS ----------------
+    this.xenovaReady = false;
+    this.xenovaEmbedder = null;
+    this.xenovaDimension = 768;
+
+    // Default Dimension
+    this.dimension = this.useCohere
+      ? this.cohereDimension
+      : this.xenovaDimension;
   }
 
+  // ---------------- LOAD XENOVA MODEL (ESM SAFE) ----------------
+  async loadXenova() {
+    if (this.xenovaReady) return;
 
-  async generateEmbedding(text, inputType = 'search_document') {
+    console.log("⏳ Loading Xenova local embedding model...");
+
+    const transformers = await import("@xenova/transformers");
+
+    this.xenovaEmbedder = await transformers.pipeline(
+      "feature-extraction",
+      "Xenova/all-MiniLM-L6-v2"
+    );
+
+    this.dimension = this.xenovaDimension;
+    this.xenovaReady = true;
+
+    console.log("✅ Xenova embeddings ready (FREE | No API)");
+  }
+
+  // ---------------- SINGLE EMBEDDING ----------------
+  async generateEmbedding(text, inputType = "search_document") {
     if (!text || text.trim().length === 0) {
       throw new Error("Text cannot be empty");
     }
 
-    // Priority 1: Try Cohere (FREE API)
+    text = text.trim();
+
+    // ---------- PRIORITY 1: COHERE ----------
     if (this.useCohere) {
       try {
         const response = await this.cohereClient.embed({
-          texts: [text.trim()],
+          texts: [text],
           model: this.cohereModel,
-          inputType: inputType, // 'search_query' for queries, 'search_document' for documents
-          truncate: 'END'
+          inputType,
+          truncate: "END",
         });
-        
+
         const embedding = response.embeddings[0];
-        console.log(`✅ Generated Cohere embedding (${inputType}) (${text.substring(0, 50)}...) - Dimension: ${embedding.length}`);
+        console.log(
+          `✅ Cohere embedding generated (${embedding.length} dims)`
+        );
         return embedding;
       } catch (error) {
         console.error("❌ Cohere embedding error:", error.message);
-       
-        // Fall through to mock
       }
     }
 
-    // Priority 2: Mock embeddings (fallback)
-    console.warn("⚠️  No embedding API available. Using mock embeddings for testing.");
+    // ---------- PRIORITY 2: XENOVA LOCAL ----------
+    try {
+      await this.loadXenova();
+
+      const output = await this.xenovaEmbedder(text, {
+        pooling: "mean",
+        normalize: true,
+      });
+
+      const embedding = Array.from(output.data);
+
+      console.log(
+        `✅ Xenova Local Embedding generated (${embedding.length} dims)`
+      );
+
+      return embedding;
+    } catch (error) {
+      console.error("❌ Xenova embedding error:", error.message);
+    }
+
+    // ---------- PRIORITY 3: MOCK ----------
+    console.warn("⚠️ Using MOCK embeddings fallback");
     return this.generateMockEmbedding(text);
   }
 
-  /**
-   * Generate mock embedding for testing (when OpenAI key not available)
-   */
+  // ---------------- MOCK ----------------
   generateMockEmbedding(text) {
-    // Simple hash-based mock embedding (consistent for same text)
     const hash = this.simpleHash(text);
     const embedding = Array(this.dimension).fill(0);
-    
-    // Fill with pseudo-random values based on hash
+
     for (let i = 0; i < this.dimension; i++) {
-      embedding[i] = Math.sin(hash + i) * 0.5 + 0.5; // Normalize to 0-1
+      embedding[i] = Math.sin(hash + i) * 0.5 + 0.5;
     }
-    
-    console.log(`📝 Generated mock embedding for text (${text.substring(0, 50)}...) - Dimension: ${embedding.length}`);
+
+    console.log(
+      `📝 Mock embedding generated (${text.substring(
+        0,
+        40
+      )}...) dim=${embedding.length}`
+    );
+
     return embedding;
   }
 
   simpleHash(str) {
     let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
+    for (let c of str) {
+      hash = (hash << 5) - hash + c.charCodeAt(0);
+      hash |= 0;
     }
     return Math.abs(hash);
   }
 
-  /**
-   * Multiple texts ko batch mein embeddings generate karta hai (faster)
-   * Priority: Cohere (FREE) > Mock
-   * @param {string[]} texts - Array of texts
-   * @returns {Promise<number[][]>} - Array of embedding vectors
-   */
+  // ---------------- BATCH EMBEDDINGS ----------------
   async generateEmbeddingsBatch(texts) {
-    if (!texts || texts.length === 0) {
-      return [];
-    }
+    if (!texts || texts.length === 0) return [];
 
-    // Filter empty texts
-    const validTexts = texts.filter(t => t && t.trim().length > 0);
-    
-    if (validTexts.length === 0) {
-      return [];
-    }
+    const validTexts = texts.filter((t) => t && t.trim().length > 0);
+    if (validTexts.length === 0) return [];
 
-    // Priority 1: Try Cohere (FREE API) - supports batch natively
+    // ---------- PRIORITY 1: COHERE BATCH ----------
     if (this.useCohere) {
       try {
-        // Cohere supports batch up to 96 texts per request
         const batchSize = 96;
         const batches = [];
-        
+
         for (let i = 0; i < validTexts.length; i += batchSize) {
           batches.push(validTexts.slice(i, i + batchSize));
         }
 
         const allEmbeddings = [];
-        // For batch mode we always treat these as documents by default
-        const inputType = 'search_document';
-        
+
         for (let i = 0; i < batches.length; i++) {
-          const batch = batches[i];
-          console.log(`📦 Processing Cohere batch ${i + 1}/${batches.length} (${batch.length} texts)...`);
-          
+          console.log(`📦 Cohere Batch ${i + 1}/${batches.length}`);
+
           const response = await this.cohereClient.embed({
-            texts: batch,
+            texts: batches[i],
             model: this.cohereModel,
-            inputType: inputType, // 'search_query' for queries, 'search_document' for documents
-            truncate: 'END'
+            inputType: "search_document",
+            truncate: "END",
           });
-          
+
           allEmbeddings.push(...response.embeddings);
         }
 
-        console.log(`✅ Generated ${allEmbeddings.length} Cohere embeddings in ${batches.length} batch(es)`);
+        console.log(`✅ Cohere Batch Done: ${allEmbeddings.length}`);
         return allEmbeddings;
-      } catch (error) {
-        console.error("❌ Cohere batch embedding error:", error.message);
-        console.warn("⚠️  Falling back to mock...");
-        // Fall through to mock
+      } catch (err) {
+        console.error("❌ Cohere batch error:", err.message);
       }
     }
 
-    // Priority 2: Mock embeddings (fallback)
-    console.warn("⚠️  No embedding API available. Using mock embeddings for testing.");
-    return validTexts.map(text => this.generateMockEmbedding(text));
+    // ---------- PRIORITY 2: XENOVA ----------
+    try {
+      await this.loadXenova();
+
+      const results = [];
+
+      for (const text of validTexts) {
+        const output = await this.xenovaEmbedder(text.trim(), {
+          pooling: "mean",
+          normalize: true,
+        });
+
+        results.push(Array.from(output.data));
+      }
+
+      console.log(`✅ Xenova Batch Done: ${results.length}`);
+      return results;
+    } catch (e) {
+      console.error("❌ Xenova batch error:", e.message);
+    }
+
+    // ---------- PRIORITY 3: MOCK ----------
+    console.warn("⚠️ Batch fallback → Mock embeddings");
+    return validTexts.map((t) => this.generateMockEmbedding(t));
   }
 
-  /**
-   * Test function - check if service is working
-   */
+  // ---------------- HEALTH CHECK ----------------
   async testConnection() {
     const serviceInfo = {
       cohere: this.useCohere ? "✅ Active" : "❌ Not available",
-      mock: !this.useCohere ? "✅ Using mock" : "❌ Not needed"
+      xenova: this.xenovaReady
+        ? "✅ Active"
+        : "⏳ Will load when needed",
     };
 
     try {
-      const testEmbedding = await this.generateEmbedding("test");
+      const emb = await this.generateEmbedding("test message");
       return {
         success: true,
-        dimension: testEmbedding.length,
-        service: this.useCohere ? "Cohere" : "Mock",
-        model: this.useCohere ? this.cohereModel : "mock",
-        services: serviceInfo
+        dimension: emb.length,
+        service: this.useCohere
+          ? "Cohere"
+          : this.xenovaReady
+          ? "Xenova"
+          : "Mock",
+        services: serviceInfo,
       };
     } catch (error) {
       return {
         success: false,
         error: error.message,
-        services: serviceInfo
+        services: serviceInfo,
       };
     }
   }
 }
 
-// Export singleton instance
 module.exports = new EmbeddingService();

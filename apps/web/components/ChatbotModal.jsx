@@ -4,6 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
 import { API_ENDPOINTS } from "../config/api";
+import TypingMessage from "./TypingMessage";
+
+// voiceUtils will be initialized after component mounts
+let voiceUtils = null;
 
 export default function ChatbotModal({ isOpen, onClose }) {
   const { user, isAuthenticated } = useAuth();
@@ -14,11 +18,107 @@ export default function ChatbotModal({ isOpen, onClose }) {
   const [expandedMessages, setExpandedMessages] = useState(new Set()); // Track expanded "Show more" messages
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechError, setSpeechError] = useState(null);
+  const [selectedLanguage, setSelectedLanguage] = useState('en-US'); // Default language
+  const [voiceSupported, setVoiceSupported] = useState(false); // Track if voice features are supported
+  const [isVoiceMode, setIsVoiceMode] = useState(false); // Track if current interaction is via voice
 
   // Determine user role for role-aware content
   const userRole = isAuthenticated ? user?.role || "client" : "client";
   const isEmployee = userRole === "employee";
   const isAdmin = userRole === "admin";
+
+  // Toggle speech recognition
+  const toggleListening = async () => {
+    if (!voiceUtils || !voiceSupported) {
+      setSpeechError('Speech recognition not supported in this browser');
+      return;
+    }
+
+    if (isListening) {
+      voiceUtils.stopListening();
+      setIsListening(false);
+    } else {
+      // Set Voice Mode to TRUE when user initiates voice interaction
+      setIsVoiceMode(true);
+
+      // Check microphone permission before starting
+      const permissionStatus = await voiceUtils.checkMicrophonePermission();
+      
+      if (permissionStatus === 'denied') {
+        // ... (Error handling remains same)
+      }
+      
+      setSpeechError(null);
+      
+      // Call startListening and handle the result
+      try {
+        const result = await voiceUtils.startListening(
+          (transcript) => {
+            setInputText(transcript);
+            // Pass true to force voice mode for this specific send
+            handleSend(transcript, true); 
+            setIsListening(false);
+          },
+          (error) => {
+            // ... (Error handling remains same)
+            setIsListening(false);
+          },
+          () => {
+            // onEnd callback
+            setIsListening(false);
+          },
+          selectedLanguage 
+        );
+        
+        if (result) {
+          setIsListening(true);
+        } else {
+          setIsListening(false);
+        }
+      } catch (error) {
+        console.error('Error starting speech recognition:', error);
+        setSpeechError('Failed to start speech recognition. Please check browser permissions.');
+        setIsListening(false);
+      }
+    }
+  };
+
+  // Text to speech function
+  const speakText = (text) => {
+    if (!text) {
+      console.warn('No text provided for speech synthesis');
+      return;
+    }
+
+    if (!voiceUtils || !voiceSupported) {
+      console.warn('Speech synthesis not supported in this browser');
+      return;
+    }
+
+    if (isSpeaking) {
+      voiceUtils.cancelSpeech();
+      setIsSpeaking(false);
+      return;
+    }
+
+    // Ensure we stop listening if we start speaking
+    if (isListening) {
+      voiceUtils.stopListening();
+      setIsListening(false);
+    }
+
+    const success = voiceUtils.speakText(text, selectedLanguage); // Use selected language
+    if (success) {
+      setIsSpeaking(true);
+      // Update speaking state when speech ends
+      setTimeout(() => {
+        setIsSpeaking(false);
+      }, text.length * 50); // Rough estimation of speech duration
+    }
+  };
 
   // Role-based popular topics
   const getPopularTopics = () => {
@@ -75,7 +175,6 @@ export default function ChatbotModal({ isOpen, onClose }) {
           text: "Get instant answers about Mobiloitte's services",
           query: "What services does Mobiloitte provide?"
         },
-      
         { 
           text: "Find contact information and company details",
           query: "How can I contact Mobiloitte? What is the company information?"
@@ -85,16 +184,24 @@ export default function ChatbotModal({ isOpen, onClose }) {
   };
 
   const handleTopicClick = async (query) => {
+    setIsVoiceMode(false); // Use Text Mode for clicks
     setInputText(query);
-    await handleSend(query);
-    // Keep focus on input field after clicking topic/skill
+    await handleSend(query, false);
+    // Keep focus
     setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
   };
 
-  const handleSend = async (text) => {
+  const handleSend = async (text, overrideVoiceMode) => {
     if (!text.trim() || isLoading) return;
+
+    // Determine if we should speak based on override or current state
+    // If overrideVoiceMode provided (from mic/topic), use it. Else use default (false for typing)
+    const shouldSpeak = overrideVoiceMode !== undefined ? overrideVoiceMode : false;
+    
+    // Update state to match this interaction
+    setIsVoiceMode(shouldSpeak);
 
     const userMessage = {
       id: `u-${Date.now()}`,
@@ -123,6 +230,11 @@ export default function ChatbotModal({ isOpen, onClose }) {
       });
 
       const data = await response.json();
+      
+      // Determine if we should suppress speech (invalid queries)
+      const contextType = data.context?.type;
+      const suppressSpeech = contextType === 'gibberish' || contextType === 'profanity_detected';
+      const finalShouldSpeak = shouldSpeak && !suppressSpeech;
 
       // Handle formatted responses (Kenyt AI style)
       if (data.formatted && data.chunks && Array.isArray(data.chunks)) {
@@ -133,17 +245,29 @@ export default function ChatbotModal({ isOpen, onClose }) {
           content: chunk.content || '',
           chunkType: chunk.type || 'text',
           chunkData: chunk, // Store full chunk data for structured rendering
+          isVoiceContext: shouldSpeak, // NEW: Capture voice context
         }));
         
         setMessages((prev) => [...prev, ...chunkMessages]);
+        
+        // Speak the first chunk of the response ONLY if permitted
+        if (chunkMessages.length > 0 && finalShouldSpeak) {
+          speakText(chunkMessages[0].content);
+        }
       } else {
         // Fallback: Single message (backward compatibility)
         const aiMessage = {
           id: `a-${Date.now()}`,
           role: "assistant",
           content: data.response,
+          isVoiceContext: shouldSpeak, // NEW: Capture voice context
         };
         setMessages((prev) => [...prev, aiMessage]);
+        
+        // Speak response ONLY if permitted
+        if (finalShouldSpeak) {
+          speakText(data.response);
+        }
       }
     } catch (error) {
       console.error("Error calling chat API:", error);
@@ -166,7 +290,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend(inputText);
+      handleSend(inputText, false); // Explicitly disable voice mode for typing
       // Keep focus on input after Enter key press
       setTimeout(() => {
         inputRef.current?.focus();
@@ -174,9 +298,22 @@ export default function ChatbotModal({ isOpen, onClose }) {
     }
   };
 
-  // Reset messages + lock body scroll when modal opens
+  // Initialize voiceUtils and reset messages + lock body scroll when modal opens
   useEffect(() => {
     if (isOpen) {
+      // Initialize voiceUtils on the client side
+      if (typeof window !== 'undefined' && voiceUtils === null) {
+        import("../utils/voiceUtils").then((module) => {
+          voiceUtils = module.default;
+          setVoiceSupported(voiceUtils.isSupported);
+        }).catch((error) => {
+          console.error('Failed to load voiceUtils:', error);
+          setVoiceSupported(false);
+        });
+      } else if (voiceUtils) {
+        setVoiceSupported(voiceUtils.isSupported);
+      }
+      
       setMessages([]);
       setIsMinimized(false);
       document.body.style.overflow = "hidden";
@@ -372,52 +509,6 @@ export default function ChatbotModal({ isOpen, onClose }) {
                     ))}
                   </div>
 
-                  {/* Skill Spotlight - Image 2 style: Card-based navigation - Staggered Animation (After Popular Topics) */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 mb-3 animate-fadeInUp" style={{ animationDelay: '1.3s', animationFillMode: 'both' }}>
-                      <svg className="h-5 w-5 text-[#E31E24]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                      </svg>
-                      <h4 className="text-sm font-semibold text-gray-800">Skill Spotlight...</h4>
-                    </div>
-                    <p className="text-xs text-gray-600 mb-3 animate-fadeInUp" style={{ animationDelay: '1.35s', animationFillMode: 'both' }}></p>
-                    <div className="space-y-2">
-                      {getSkillSpotlight().map((skill, index) => (
-                        <button
-                          key={index}
-                          onClick={() => handleTopicClick(skill.query)}
-                          className="w-full flex items-center gap-4 px-4 py-3.5 bg-white mt-5 hover:bg-[#FFF5F5] rounded-xl border border-gray-300 hover:border-[#E31E24]/30 transition-all duration-200 text-left group focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md cursor-pointer animate-fadeInUp"
-                          style={{ animationDelay: `${1.4 + index * 0.1}s`, animationFillMode: 'both' }}
-                          aria-label={`Ask about ${skill.text}`}
-                        >
-                          {/* Icon - Left side like Image 2 */}
-                          <div className="flex-shrink-0 h-8 w-8 rounded-lg bg-gray-50 group-hover:bg-[#FFE5E5] flex items-center justify-center transition-colors">
-                            <svg
-                              className="h-4 w-4 text-gray-600 group-hover:text-[#E31E24] transition-colors"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              strokeWidth={2}
-                              aria-hidden="true"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                          <span className="text-sm text-gray-700 group-hover:text-gray-900 flex-1">{skill.text}</span>
-                          <svg
-                            className="h-5 w-5 text-gray-400 group-hover:text-[#E31E24] transition-colors flex-shrink-0"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            strokeWidth={2}
-                            aria-hidden="true"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               ) : (
                 /* Chat Messages - WhatsApp Style */
@@ -440,7 +531,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                       )}
                       {/* Message Card - WhatsApp Style Speech Bubble */}
                       <div
-                        className={`max-w-[85%] px-4 py-3 shadow-md relative ${
+                        className={`max-w-[85%] px-5 py-4 shadow-md relative ${
                           msg.role === "user"
                             ? "bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white rounded-2xl rounded-tl-sm"
                             : "bg-white text-gray-900 rounded-2xl rounded-tr-sm border border-gray-200/50"
@@ -496,8 +587,30 @@ export default function ChatbotModal({ isOpen, onClose }) {
                           </ul>
                         ) : (
                           <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                            {msg.content}
+                            {msg.role === "assistant" && index === messages.length - 1
+                              ? <TypingMessage text={msg.content} typingSpeed={15} />
+                              : msg.content}
                           </p>
+                        )}
+                        {/* Add speak button for assistant messages */}
+                        {msg.role === "assistant" && msg.isVoiceContext && (
+                          <div className="mt-2 flex justify-end">
+                            <button
+                              onClick={() => speakText(msg.content)}
+                              disabled={isSpeaking || !voiceSupported}
+                              className={`text-xs p-1 rounded ${
+                                isSpeaking || !voiceSupported
+                                  ? 'text-gray-400 cursor-not-allowed' 
+                                  : 'text-[#E31E24] hover:text-[#C41E3A] cursor-pointer'
+                              }`}
+                              aria-label={isSpeaking ? "Speaking..." : "Listen to message"}
+                              title={!voiceSupported ? "Text-to-speech not supported in this browser" : "Listen to message"}
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                              </svg>
+                            </button>
+                          </div>
                         )}
                       </div>
                       {/* User Avatar - REMOVED as per user request (Image shows only message bubble, no avatar) */}
@@ -532,7 +645,6 @@ export default function ChatbotModal({ isOpen, onClose }) {
                           <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                         </div>
                       </div>
-                      <span className="sr-only">Assistant is typing</span>
                     </div>
                   )}
                 </div>
@@ -540,16 +652,46 @@ export default function ChatbotModal({ isOpen, onClose }) {
             </div>
 
             {/* Input Area - Attractive Style (Image 3 style) */}
-            <div className="border-t border-[#FFE5E5] bg-gradient-to-b from-white to-[#FFFBFB] px-6 py-4">
+            <div className="border-t border-[#FFE5E5] bg-gradient-to-b from-white to-[#FFFBFB] px-2 py-4">
               <div className="flex items-center gap-3">
-                {/* Hamburger Menu Icon */}
-                <button
-                  className="p-3 hover:bg-[#FFE5E5] rounded-xl border border-gray-300 transition-all duration-200 text-[#E31E24] focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95"
-                  aria-label="Menu"
+                {/* Language Selection Dropdown */}
+                <select
+                  value={selectedLanguage}
+                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  className="p-2.5 rounded-xl border-2 border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30"
+                  disabled={isLoading}
+                  aria-label="Select language"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
+                  <option value="en-US">English</option>
+                  <option value="hi-IN">Hindi</option>
+                  <option value="en-IN">Hinglish</option>
+                  
+                </select>
+                
+                {/* Voice Input Button */}
+                <button
+                  onClick={toggleListening}
+                  disabled={isLoading || !voiceSupported}
+                  className={`p-2.5 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95 ${
+                    isListening 
+                      ? 'bg-red-100 border-red-300 text-red-600 animate-pulse' 
+                      : voiceSupported 
+                        ? 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-[#FFE5E5] hover:text-[#E31E24]' 
+                        : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
+                  }`}
+                  aria-label={isListening ? "Stop listening" : "Start voice input"}
+                  title={isListening ? "Click to stop listening" : !voiceSupported ? "Speech recognition not supported in this browser" : "Click to start voice input - make sure microphone access is allowed"}
+                >
+                  {isListening ? (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16V8z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h18" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  )}
                 </button>
                 
                 {/* Input Field - Attractive rounded style */}
@@ -560,7 +702,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyPress={handleKeyPress}
                   placeholder="Type your question here....."
-                  className="flex-1 px-5 py-3.5 bg-white border-2 border-gray-300 rounded-3xl focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:border-[#E31E24] transition-all duration-200 text-sm text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                  className="flex-1 min-w-0 h-12 px-6 bg-white border-2 border-gray-300 rounded-3xl focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:border-[#E31E24] transition-all duration-200 text-sm text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
                   disabled={isLoading}
                   aria-label="Chat input"
                 />
@@ -568,14 +710,14 @@ export default function ChatbotModal({ isOpen, onClose }) {
                 {/* Send Button - Attractive circular style */}
                 <button
                   onClick={() => {
-                    handleSend(inputText);
+                    handleSend(inputText, false); // Explicitly disable voice mode
                     // Keep focus on input after button click
                     setTimeout(() => {
                       inputRef.current?.focus();
                     }, 10);
                   }}
                   disabled={isLoading || !inputText.trim()}
-                  className="flex-shrink-0 p-3.5 bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white rounded-full hover:from-[#C41E3A] hover:to-[#A01A2E] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:ring-offset-2 shadow-lg hover:shadow-xl active:scale-95"
+                  className="flex-shrink-0 h-11 w-11 flex items-center justify-center bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white rounded-full hover:from-[#C41E3A] hover:to-[#A01A2E] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:ring-offset-2 shadow-lg hover:shadow-xl active:scale-95 "
                   aria-label="Send message"
                   type="button"
                 >
@@ -584,6 +726,28 @@ export default function ChatbotModal({ isOpen, onClose }) {
                   </svg>
                 </button>
               </div>
+              
+              {/* Voice input status message */}
+              {isListening && (
+                <div className="mt-2 text-center text-sm text-gray-600">
+                  Listening... Speak now ({selectedLanguage})
+                </div>
+              )}
+              
+              {speechError && (
+                <div className="mt-2 text-center text-sm text-red-600">
+                  {speechError}
+                  {speechError && (speechError.toLowerCase().includes('denied') || speechError.toLowerCase().includes('not-allowed') || speechError.includes('check your browser permissions')) && (
+                    <div className="mt-1 text-xs text-red-500 space-y-1">
+                      <div>To fix this: Click the lock icon in the address bar → Site Settings → Allow Microphone</div>
+                      <div>Or update browser permissions directly:</div>
+                      <div className="font-medium">
+                        Chrome: Settings → Privacy and Security → Site Settings → Microphone → Find this site → Allow
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}

@@ -431,7 +431,7 @@ async function handleMessage(req, res) {
     
     // Redact sensitive data for client responses
     response = redactResponseText(response, userRole);
-
+    
     // Step 10: Format response into structured chunks (Kenyt AI style)
     const formattedResponse = formatResponseForAPI(response, {
       maxLinesPerBubble: 5,

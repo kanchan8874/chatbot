@@ -248,7 +248,7 @@ router.post("/docs", requireAdmin, upload.single("file"), async (req, res) => {
       { source_id: sourceId, source_type: "doc", version: job.version || "v1" },
       audience === 'employee' ? 'employee_docs' : 'public_docs'
     );
-
+    
     // Extract, clean, and chunk the document
     const { chunks, metadata } = await documentProcessor.processDocument(
       req.file.buffer,
@@ -281,11 +281,11 @@ router.post("/docs", requireAdmin, upload.single("file"), async (req, res) => {
 
       if (embeddings && embeddings.length === documentChunks.length) {
         const vectors = documentChunks.map((chunk, index) => ({
-          id: chunk.chunkId,
+      id: chunk.chunkId,
           values: embeddings[index],
-          metadata: {
-            text: chunk.chunkText,
-            audience: chunk.audience,
+      metadata: {
+        text: chunk.chunkText,
+        audience: chunk.audience,
             source_type: "doc",
             source_id: sourceId,
             chunk_id: chunk.chunkId,
@@ -293,12 +293,12 @@ router.post("/docs", requireAdmin, upload.single("file"), async (req, res) => {
             heading_path: chunk.headingPath,
             page: chunk.page,
             version: job.version || "v1",
-          }
-        }));
-        
-        // Upsert vectors to Pinecone
-        const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
-        await pineconeService.upsertVectors(vectors, namespace);
+      }
+    }));
+    
+    // Upsert vectors to Pinecone
+    const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
+    await pineconeService.upsertVectors(vectors, namespace);
       } else {
         console.warn("⚠️  Embeddings not generated for all document chunks; skipping Pinecone upsert.");
       }
@@ -433,25 +433,25 @@ router.post("/webcrawl", requireAdmin, async (req, res) => {
 
       if (embeddings && embeddings.length === documentChunks.length) {
         const vectors = documentChunks.map((chunk, index) => ({
-          id: chunk.chunkId,
+      id: chunk.chunkId,
           values: embeddings[index],
-          metadata: {
-            text: chunk.chunkText,
-            audience: chunk.audience,
+      metadata: {
+        text: chunk.chunkText,
+        audience: chunk.audience,
             source_type: "web",
             source_id: sourceId,
             chunk_id: chunk.chunkId,
-            title: chunk.title,
+        title: chunk.title,
             heading_path: chunk.headingPath,
             page: chunk.page,
             url: url,
             version: job.version || "v1",
-          }
-        }));
-        
-        // Upsert vectors to Pinecone
-        const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
-        await pineconeService.upsertVectors(vectors, namespace);
+      }
+    }));
+    
+    // Upsert vectors to Pinecone
+    const namespace = audience === 'employee' ? 'employee_docs' : 'public_docs';
+    await pineconeService.upsertVectors(vectors, namespace);
       } else {
         console.warn("⚠️  Embeddings not generated for all web chunks; skipping Pinecone upsert.");
       }

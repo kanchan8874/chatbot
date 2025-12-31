@@ -166,20 +166,7 @@ async function detectLanguage(text) {
   }
 }
 
-/**
- * PROFANITY DETECTION USING THIRD-PARTY LIBRARIES
- * 
- * Strategy:
- * 1. Use allprofanity (specialized for Hindi/Hinglish) - FAST, LOCAL
- * 2. Use bad-words (English profanity) - FAST, LOCAL
- * 3. Optional: WebPurify API (fallback for edge cases) - SLOW, API CALL
- * 
- * Benefits:
- * - No hardcoded word lists to maintain
- * - Automatically updated with library updates
- * - Supports Hindi + English natively
- * - Fast (no API calls by default)
- */
+
 async function containsProfanity(text) {
   if (!text || text.trim().length === 0) return false;
   
@@ -237,30 +224,7 @@ async function containsProfanity(text) {
     console.warn(`⚠️  profanity-hindi check failed: ${error.message}`);
   }
   
-  // STEP 4: Optional - WebPurify API fallback (only if enabled)
-  // Uncomment below if you want to use WebPurify API as fallback
-  /*
-  if (process.env.WEBPURIFY_API_KEY) {
-    try {
-      const axios = require('axios');
-      const response = await axios.get('https://api1.webpurify.com/services/rest/', {
-        params: {
-          api_key: process.env.WEBPURIFY_API_KEY,
-          method: 'webpurify.live.check',
-          text: text,
-          lang: 'hi,en' // Hindi and English
-        }
-      });
-      
-      if (response.data && response.data.rsp && response.data.rsp.found === '1') {
-        console.log(`🚫 Profanity detected via WebPurify API: "${text.substring(0, 50)}..."`);
-        return true;
-      }
-    } catch (error) {
-      console.warn(`⚠️  WebPurify API check failed: ${error.message}`);
-    }
-  }
-  */
+
   
   return false;
 }
