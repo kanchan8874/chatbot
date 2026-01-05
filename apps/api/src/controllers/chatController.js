@@ -2,7 +2,7 @@ const QAPair = require("../database/models/QAPair");
 
 // Import utilities
 const { normalizeText } = require("../utils/textProcessing");
-const { isGibberish, detectLanguage, containsProfanity } = require("../utils/textValidation");
+const { isGibberish, isMeaningfulInquiry, detectLanguage, containsProfanity } = require("../utils/textValidation");
 const { detectConversationalIntent, getConversationalResponse } = require("../utils/conversationalHandler");
 const { 
   classifyIntent, 
@@ -146,7 +146,17 @@ async function handleMessage(req, res) {
     
     console.log(`👤 User role detected: ${userRole}, Message: "${message.substring(0, 50)}"`);
     
-    // Step 3: Profanity check (BEFORE any embedding/RAG processing)
+    // Step 3: Gibberish check (EARLY EXIT)
+    if (isGibberish(message, userRole)) {
+      console.log(`⚠️  Gibberish detected: "${message.substring(0, 50)}"`);
+      return res.json({
+        response: "I'm sorry, I couldn't understand that. Please ask a clear question about our services or company.",
+        sessionId,
+        context: { type: "gibberish", language: "und" }
+      });
+    }
+
+    // Step 4: Profanity check (BEFORE any embedding/RAG processing)
     const hasProfanity = await containsProfanity(message);
     if (hasProfanity) {
       console.log(`🚫 Profanity detected in message from ${userRole}: "${message.substring(0, 50)}..."`);
@@ -157,13 +167,13 @@ async function handleMessage(req, res) {
       });
     }
     
-    // Step 4: Language detection
+    // Step 5: Language detection
     const detectedLanguage = await detectLanguage(message);
     if (detectedLanguage !== 'und' && detectedLanguage !== 'eng') {
       console.log(`🌐 Detected language: ${detectedLanguage} for message: "${message.substring(0, 50)}"`);
     }
     
-    // Step 5: Check for conversational intents
+    // Step 6: Check for conversational intents
     const conversationalIntent = detectConversationalIntent(message);
     if (conversationalIntent) {
       const response = getConversationalResponse(conversationalIntent);
@@ -177,14 +187,15 @@ async function handleMessage(req, res) {
         }
       });
     }
-    
-    // Step 6: Gibberish check
-    if (isGibberish(message, userRole)) {
-      console.log(`⚠️  Gibberish detected: "${message.substring(0, 50)}"`);
+
+    // Step 6a: Question Validation (Ideal behavior check)
+    // If it's not a greeting/thanks but also not a meaningful inquiry, terminate early
+    if (!isMeaningfulInquiry(message)) {
+      console.log(`ℹ️  Plain text fragment detected (not an inquiry): "${message.substring(0, 50)}"`);
       return res.json({
-        response: "I'm sorry, I couldn't understand that. Please ask a clear question about our services or company.",
+        response: "That's an interesting statement! How can I specifically help you with Mobiloitte's services, AI solutions, or company information today?",
         sessionId,
-        context: { type: "gibberish", language: detectedLanguage }
+        context: { type: "non_inquiry_statement", language: detectedLanguage }
       });
     }
     
@@ -298,19 +309,52 @@ async function handleMessage(req, res) {
         // If no high-confidence CSV result and no context, ask clarify instead of hallucinating
         if (!context || (context.type === "no_data_found")) {
           const actionIntent = detectActionIntent(normalizedMessage);
+        
           if (actionIntent) {
-            const handover = buildHandoverPayload({ message, userRole, intent: actionIntent, context, topScore: null });
-            response = "Main is request ko team tak forward kar raha hoon. Kya aap apna preferred contact (email/phone) share kar sakte hain?";
-            context = { type: "handover", actionIntent, handover };
+            const handover = buildHandoverPayload({
+              message,
+              userRole,
+              intent: actionIntent,
+              context,
+              topScore: null
+            });
+        
+            response =
+              "I’m forwarding your request to our team so we can assist you further. " +
+              "Could you please share your preferred contact details (email or phone number)?";
+        
+            context = {
+              type: "handover",
+              actionIntent,
+              handover
+            };
           } else {
-            response = "Mujhe exact match nahi mila. Kya aap service/department ya topic thoda aur specific bata sakte hain?";
-            context = { type: "clarify_csv", reason: "low_confidence_csv" };
+            response =
+              "I couldn’t find an exact or verified answer for this query. " +
+              "Could you please clarify your question by specifying the service, department, " +
+              "or topic you are interested in?";
+        
+            context = {
+              type: "clarify_csv",
+              reason: "low_confidence_csv"
+            };
           }
-        } else if (context && context.type === "document" && (!context.chunks || context.chunks.length === 0)) {
-          // Hard refusal when CSV routed to doc fallback but no evidence
-          response = "Mere paas is query ka jawaab dene ke liye koi supporting information nahi mili. Kya aap kisi specific service ya topic par pooch sakte hain?";
-          context = { type: "no_data_found" };
+        } 
+        else if (
+          context &&
+          context.type === "document" &&
+          (!context.chunks || context.chunks.length === 0)
+        ) {
+          // Hard refusal when no supporting evidence is available
+          response =
+            "I don’t currently have any reliable or supporting information to answer this question. " +
+            "Please ask about a specific service, process, or topic so I can assist you more accurately.";
+        
+          context = {
+            type: "no_data_found"
+          };
         }
+        
         
         // Apply language-specific transformation if needed
         if (detectedLanguage !== 'eng' && detectedLanguage !== 'und') {
@@ -345,33 +389,22 @@ async function handleMessage(req, res) {
           }
         }
         
-        // Check if this is a job-related query
+        // Search documents for RAG (General or Job-related)
+        let namespace = "public_docs";
+        if (userRole === "admin" || userRole === "employee") {
+          namespace = "employee_docs";
+        }
+        
+        const chunks = await searchDocuments(message, userRole, namespace);
+
+        // Check if this is a job-related query specifically
         if (isJobRelatedQuery(message)) {
-          // Try to find job-related information in documents
-          let namespace = "public_docs";
-          if (userRole === "admin") {
-            namespace = "employee_docs";
-          } else if (userRole === "employee") {
-            namespace = "employee_docs";
-          }
-          
-          const chunks = await searchDocuments(message, userRole, namespace);
           const jobResponse = generateJobResponse(chunks);
           response = jobResponse.response;
           context = { type: "job_info", isJobAvailable: jobResponse.isJobAvailable, chunks: chunks };
         } else {
-          // Proceed with document RAG for non-job queries
-          let namespace = "public_docs";
-          if (userRole === "admin") {
-            namespace = "employee_docs";
-          } else if (userRole === "employee") {
-            namespace = "employee_docs";
-          }
-          
-          const chunks = await searchDocuments(message, userRole, namespace);
-          
-          // Use adaptive threshold based on query type and context
-          const threshold = isFAQQuery(normalizeText(message)) ? 0.4 : 0.5; // Lower threshold for FAQ-like queries
+          // Use higher threshold for RAG
+          const threshold = 0.60;
           let filteredChunks = chunks || [];
           // Extra audience guard: ensure client never sees non-public chunks
           if (userRole === "client") {
@@ -385,21 +418,30 @@ async function handleMessage(req, res) {
           if (goodChunks.length > 0) {
             context = { type: "document", chunks: goodChunks };
             response = await generateLLMResponse(message, context, userRole, detectedLanguage);
-          } else if (filteredChunks && filteredChunks.length > 0 && filteredChunks[0].score >= 0.25) {
+          } else if (filteredChunks && filteredChunks.length > 0 && filteredChunks[0].score >= 0.35) {
             // Low-confidence guardrail → ask for clarification instead of hallucinating
             const actionIntent = detectActionIntent(normalizeText(message));
             if (actionIntent) {
-              const handover = buildHandoverPayload({ message, userRole, intent: actionIntent, context, topScore: filteredChunks[0].score });
-              response = "Main is request ko team tak forward kar raha hoon. Kya aap apna preferred contact (email/phone) share kar sakte hain?";
+              const handover = buildHandoverPayload({
+                message,
+                userRole,
+                intent: actionIntent,
+                context,
+                topScore: filteredChunks[0].score
+              });
+            
+              response = "I am forwarding this request to our team. Could you please share your preferred contact details (email or phone number)?";
               context = { type: "handover", actionIntent, handover };
+            
             } else {
-              response = "Mujhe exact info nahi mil paayi. Kya aap thoda aur specific bata sakte hain (service/department ya topic)?";
+              response = "I couldn’t find the exact information for this query. Could you please provide a bit more detail, such as the service, department, or topic?";
               context = { type: "clarify", reason: "low_confidence", topScore: filteredChunks[0].score };
             }
-          } else if (!filteredChunks || filteredChunks.length === 0) {
-            // Hard refusal when no evidence present
-            response = "Mere paas is query ka jawaab dene ke liye koi supporting information nahi mili. Kya aap kisi specific service ya topic par pooch sakte hain?";
-            context = { type: "no_data_found" };
+            
+            } else if (!filteredChunks || filteredChunks.length === 0) {
+              // Hard refusal when no supporting evidence is available
+              response = "I don’t have sufficient verified information to answer this question. Please ask about a specific service or topic.";
+              context = { type: "no_data_found" };
           } else {
             // Fallback for employee users
             if (userRole === "employee") {

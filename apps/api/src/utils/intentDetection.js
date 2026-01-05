@@ -120,8 +120,21 @@ function detectTopicIntent(normalizedMessage) {
     return "industries";
   }
   
-  if (text.includes("experience") || text.includes("years of experience")) {
+  if (
+    text.includes("experience") || text.includes("years of experience")
+  ) {
     return "experience";
+  }
+  
+  // Training Center specifically
+  if (
+    text.includes("training center") ||
+    text.includes("center for mobile app development") ||
+    text.includes("cmad") ||
+    text.includes("skill development") ||
+    text.includes("internship program")
+  ) {
+    return "training_center";
   }
   
   if (
@@ -408,9 +421,24 @@ function classifyIntent(message, userRole) {
     return "csv_qa";
   }
   
+  // PRIORITIZE Document RAG for detailed/process queries
+  const isDetailed = detectDetailedIntent(lowerMessage);
+  if (isDetailed && ragScore >= 1) {
+    return "document_rag";
+  }
+
   // Decision logic
+  
+  // High-priority: Specific topic intents detected via detectTopicIntent
+  const topicIntent = detectTopicIntent(lowerMessage);
+  if (topicIntent) {
+    if (topicIntent === "training_center") return "csv_qa"; // Map to CSV for direct match
+    if (isDetailed && ragScore >= 1) return "document_rag";
+    return "csv_qa";
+  }
+
   if (
-    faqScore >= 1 || 
+    faqScore >= 2 || // Increased threshold for keyword-based FAQ matching
     lowerMessage.includes("what is") || 
     lowerMessage.includes("what are") ||
     lowerMessage.includes("what do you mean") ||
@@ -419,11 +447,16 @@ function classifyIntent(message, userRole) {
     (hasTopicKeyword && (lowerMessage.includes("explain") || lowerMessage.includes("define") || lowerMessage.includes("what is meant")))
   ) {
     return "csv_qa";
-  } else if (ragScore >= 1) {
+  } else if (ragScore >= 1 || isDetailed) {
     return "document_rag";
   }
   
-  // Default to CSV Q&A first
+  // Default to CSV Q&A first only if some keywords match
+  if (faqScore >= 1 || hasTopicKeyword) {
+    return "csv_qa";
+  }
+
+  // If literally nothing matches, we'll eventually hit the refusal in handler
   return "csv_qa";
 }
 

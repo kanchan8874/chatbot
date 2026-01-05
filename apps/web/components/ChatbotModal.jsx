@@ -365,7 +365,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
       {/* Modal Container - World-class design */}
       <div
         className={`fixed bottom-4 right-4 z-50 w-[420px] sm:w-[460px] bg-white rounded-xl shadow-3xl transition-all duration-300 ease-out ${
-          isMinimized ? "h-20" : "h-[760px] max-h-[90vh]"
+          isMinimized ? "h-20" : "h-[740px] max-h-[75vh]"
         } flex flex-col overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -491,18 +491,17 @@ export default function ChatbotModal({ isOpen, onClose }) {
                     </div>
                   </div>
 
-                  {/* Popular Topics - Image 1 style: Pill-shaped buttons with icons - Staggered Animation (After Welcome Message) */}
-                  <div className="flex flex-wrap gap-2.5">
+                  {/* Popular Topics - Sleeker, thinner pills with refined styling */}
+                  <div className="flex flex-wrap gap-2">
                     {getPopularTopics().map((topic, index) => (
                       <button
                         key={index}
                         onClick={() => handleTopicClick(topic.query)}
-                        className="group flex items-center gap-2.5 px-4 py-2.5  bg-white border border-gray-300 rounded-full hover:border-[#E31E24] hover:bg-[#FFF5F5] transition-all duration-200 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 shadow-sm hover:shadow-md animate-fadeInUp"
-                        style={{ animationDelay: `${0.7 + index * 0.08}s`, animationFillMode: 'both' }}
-                        aria-label={`Ask about ${topic.label}`}
+                        className="group flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-400/60 rounded-full hover:border-[#E31E24]/30 hover:bg-[#FFF8F8] transition-all duration-300 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/10 shadow-[0_4px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.08)] hover:scale-[1.03] active:scale-95 animate-fadeInUp"
+                        style={{ animationDelay: `${index * 0.05}s` }}
                       >
-                        <span className="text-lg leading-none flex-shrink-0">{topic.icon}</span>
-                        <span className="text-sm font-medium text-gray-800 group-hover:text-[#E31E24]  transition-colors whitespace-nowrap">
+                        <span className="text-base group-hover:scale-110 transition-transform duration-300">{topic.icon}</span>
+                        <span className="text-[13px] font-medium text-gray-700 group-hover:text-[#E31E24] transition-colors duration-300">
                           {topic.label}
                         </span>
                       </button>
@@ -663,7 +662,6 @@ export default function ChatbotModal({ isOpen, onClose }) {
                   aria-label="Select language"
                 >
                   <option value="en-US">English</option>
-                  <option value="hi-IN">Hindi</option>
                   <option value="en-IN">Hinglish</option>
                   
                 </select>

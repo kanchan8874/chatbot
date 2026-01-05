@@ -72,7 +72,10 @@ async function loadProfanityHindi() {
 }
 
 /**
- * Enhanced gibberish detection using gibberish-detector library
+ * Enhanced gibberish detection using word-level analysis, vowel ratios, entropy, and dictionary checks
+ */
+/**
+ * Enhanced gibberish detection using word-level analysis, vowel ratios, entropy, and dictionary checks
  */
 function isGibberish(text, userRole = "client") {
   if (!text) return true;
@@ -80,30 +83,15 @@ function isGibberish(text, userRole = "client") {
   const trimmed = text.trim();
   if (trimmed.length === 0) return true;
 
-  // Very short text (1-2 chars)
-  if (trimmed.length < 3) {
-    const commonShortWords = ["hi", "ok", "no", "yes", "ok", "a", "i"];
-    if (commonShortWords.includes(trimmed.toLowerCase())) {
-      return false;
-    }
-    const alphaChars = trimmed.match(/[a-zA-Z]/g);
-    if (!alphaChars || alphaChars.length < trimmed.length * 0.5) {
-      return true;
-    }
-  }
-
   const lowerText = trimmed.toLowerCase();
   
-  // WHITELIST: Check for legitimate question patterns
+  // 1. QUESTION PATTERNS - Preliminary check for clear questions
   const legitimateQuestionPatterns = [
-    /^(how|what|when|where|why|who|which|whom|can|could|should|would|do|does|did|is|are|was|were|will|tell|explain|describe|share|show)\s+/i,
-    /^(what\s+is|what\s+are|how\s+does|how\s+do|how\s+can|how\s+to|tell\s+me|explain|describe)/i,
-    /^(who|what|which|whom)\s+(is|are|was|were|did|does|do)/i,
+    /^(how|what|when|where|why|who|which|whom|can|could|should|would|do|does|did|is|are|was|were|will|tell|explain|describe|share|show|give|provide)\s+/i,
   ];
-  
-  const hasQuestionPattern = legitimateQuestionPatterns.some(pattern => pattern.test(trimmed));
-  
-  // WHITELIST: Professional keywords
+  if (legitimateQuestionPatterns.some(pattern => pattern.test(trimmed))) return false;
+
+  // 2. PROFESSIONAL KEYWORDS - Whitelist for domain-specific terms
   const professionalKeywords = [
     "leave", "attendance", "payroll", "salary", "holiday", "hr", "employee", "benefits",
     "policy", "procedure", "process", "appraisal", "onboarding", "resignation", "exit",
@@ -111,38 +99,96 @@ function isGibberish(text, userRole = "client") {
     "working hours", "shift", "work from home", "wfh", "hybrid", "flexible",
     "payslip", "ctc", "pf", "esi", "tds", "deduction", "allowance", "hra",
     "holiday calendar", "weekly off", "helpdesk", "people partner",
-    "service", "solution", "company", "mobiloitte", "client", "project", "team",
+    "service", "services", "solution", "solutions", "company", "mobiloitte", "mobiloite", "client", "project", "team",
     "technology", "ai", "blockchain", "development", "integration",
     "founder", "founders", "director", "directors", "ceo", "chairman", "leadership",
     "started", "founded", "established", "created", "began", "incorporated",
+    "training", "center", "cmad", "skill", "internship",
+    "information", "info", "private", "limited", "pvt", "ltd"
   ];
-  
-  const hasProfessionalKeyword = professionalKeywords.some(keyword => 
-    lowerText.includes(keyword.toLowerCase())
-  );
-  
-  if (hasQuestionPattern || hasProfessionalKeyword) {
-    return false;
-  }
 
-  // Basic gibberish checks
-  const alphaRatio = (trimmed.match(/[a-zA-Z]/g) || []).length / trimmed.length;
-  if (alphaRatio < 0.5) return true;
+  // 3. COMMON WORDS - Simplified dictionary hit check
+  const commonWords = new Set([
+     "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+     "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
+     "so", "up", "out", "if", "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
+     "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
+     "back", "after", "use", "two", "how", "our", "work", "first", "well", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+     "hi", "hello", "hey", "hii", "please", "help", "world", "doing", "today", "thanks", "thank", "you"
+  ]);
 
-  // Check for random character patterns
-  if (!hasProfessionalKeyword) {
-    const hasSpace = /\s/.test(trimmed);
-    if (!hasSpace && trimmed.length > 5) {
-      const vowels = trimmed.match(/[aeiouAEIOU]/g) || [];
-      const consonants = trimmed.match(/[bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ]/g) || [];
-      if (vowels.length === 0 || consonants.length / vowels.length > 5) {
-        return true;
+  const words = trimmed.split(/\s+/);
+  let meaningfulCount = 0;
+  let gibberishCount = 0;
+  let totalValidTokens = 0;
+
+  for (const word of words) {
+    const w = word.toLowerCase().replace(/[^a-z]/g, '');
+    if (w.length === 0) continue; // Skip tokens that are only punctuation or numbers
+
+    totalValidTokens++;
+
+    // 1. Dictionary Match (Common + Professional)
+    if (commonWords.has(w) || professionalKeywords.some(kw => w === kw)) {
+      meaningfulCount++;
+      continue;
+    }
+
+    // 2. Token-level heuristics for unknown words
+    let isTokenGibberish = false;
+
+    // A. Character Repetition (e.g., "aaaaa" or "bbbbb")
+    if (/(.)\1{3,}/.test(w)) { // 4+ identical chars
+      isTokenGibberish = true;
+    }
+
+    // B. Vowel Ratio (Strict)
+    if (!isTokenGibberish) {
+      const vowels = w.match(/[aeiouy]/gi) || [];
+      const ratio = vowels.length / w.length;
+      if (ratio < 0.2 || ratio > 0.8) { 
+        isTokenGibberish = true;
       }
+    }
+
+    // C. Entropy (Randomness sensitivity)
+    if (!isTokenGibberish && w.length > 4) {
+      const charMap = {};
+      for (const char of w) {
+        charMap[char] = (charMap[char] || 0) + 1;
+      }
+      const entropy = Object.values(charMap).reduce((acc, count) => {
+        const p = count / w.length;
+        return acc - p * Math.log2(p);
+      }, 0);
+
+      // Entropy thresholds based on word length
+      if (w.length > 7 && entropy > 3.0) isTokenGibberish = true;
+      else if (w.length > 5 && entropy > 2.6) isTokenGibberish = true;
+      else if (entropy > 2.3) isTokenGibberish = true;
+    }
+
+    if (isTokenGibberish) {
+      gibberishCount++;
+    } else {
+      // Unknown but follows phonotactic-ish patterns
+      meaningfulCount++;
     }
   }
 
-  return false;
+  // If no alpha tokens, it's not gibberish (e.g., numbers, emojis, punctuation) - let downstream handle
+  if (totalValidTokens === 0) return false;
+
+  // MAJORITY RULE: If 50% or more of valid tokens are nonsensical, classify as gibberish
+  const isFinalGibberish = gibberishCount >= (totalValidTokens * 0.5);
+  
+  if (isFinalGibberish) {
+    console.log(`⚠️ Gibberish detected: ${gibberishCount}/${totalValidTokens} tokens failed validation. Input: "${text}"`);
+  }
+
+  return isFinalGibberish;
 }
+
 
 /**
  * Detect language of the input text using franc library
@@ -229,8 +275,52 @@ async function containsProfanity(text) {
   return false;
 }
 
+/**
+ * Checks if the text is a meaningful inquiry/question for the chatbot
+ * Returns false for fragments like "blue sky", "random text", or declarations that aren't questions
+ */
+function isMeaningfulInquiry(text) {
+  if (!text) return false;
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Question Patterns (How, What, Kya, etc.)
+  const questionWords = [
+    "how", "what", "when", "where", "why", "who", "which", "can", "could", "should", "would", 
+    "do", "does", "did", "is", "are", "tell", "explain", "describe", "kaise", "kya", "kab", "kaha"
+  ];
+  const startsWithQuestion = questionWords.some(word => lower.startsWith(word + " "));
+  const endsWithQuestionMark = trimmed.endsWith("?");
+  
+  if (startsWithQuestion || endsWithQuestionMark) return true;
+
+  // 2. High-Value Professional Keywords (Even if not a formal question, it's an inquiry)
+  const keyDomainTerms = [
+    "mobiloitte", "service", "services", "ai", "blockchain", "training", "center", 
+    "leave", "payroll", "salary", "contact", "address", "hq", "ceo", "founder", "hiring", "job"
+  ];
+  const hasDomainTerm = keyDomainTerms.some(term => lower.includes(term));
+  if (hasDomainTerm) return true;
+
+  // 3. Verb-based imperative requests (e.g. "Explain services", "Show location")
+  const imperatives = ["explain", "show", "give", "share", "provide", "list"];
+  if (imperatives.some(verb => lower.startsWith(verb + " "))) return true;
+
+  // 4. Fragment check (Too short and no domain/question signal)
+  const words = trimmed.split(/\s+/);
+  if (words.length <= 3 && !hasDomainTerm && !startsWithQuestion) {
+    return false;
+  }
+
+  // 5. If it contains at least one meaningful professional token from our expanded list in isGibberish, 
+  // we give it the benefit of the doubt as a query. 
+  // Otherwise, if it's just common words like "the blue sky" or "today is nice", it fails.
+  return hasDomainTerm; 
+}
+
 module.exports = {
   isGibberish,
+  isMeaningfulInquiry,
   detectLanguage,
   containsProfanity
 };

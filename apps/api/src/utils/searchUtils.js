@@ -27,10 +27,11 @@ function hasStrongLexicalOverlap(query, candidateQuestion) {
   const coreKeywords = [
     "cin", "number", "corporate", "identification",
     "registered", "address", "office", "location",
-    "contact", "phone", "email",
-    "founder", "founders", "director", "directors",
-    "services", "core", "strengths", "key",
-    "industries", "sectors", "clients"
+    "contact", "phone", "email", "website",
+    "founder", "founders", "director", "directors", "ceo", "chairman", "leadership",
+    "services", "core", "strengths", "key", "offering", "offerings",
+    "industries", "sectors", "clients", "experience",
+    "car", "color", "favorite", "born", "birth", "hobbies", "personal"
   ];
 
   const normalizeTokens = (text) =>
@@ -436,5 +437,6 @@ module.exports = {
   searchCSVQA,
   searchDocuments,
   searchMongoDBByKeywords,
-  searchMongoDBQA
+  searchMongoDBQA,
+  hasStrongLexicalOverlap
 };

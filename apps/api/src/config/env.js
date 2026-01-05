@@ -1,4 +1,13 @@
-require("dotenv").config({ path: process.env.NODE_ENV === 'production' ? '.env' : './src/.env' });
+const path = require('path');
+const fs = require('fs');
+
+// Try loading from current directory first, then fallback to src if needed
+const envPath = fs.existsSync(path.resolve(process.cwd(), '.env')) 
+  ? path.resolve(process.cwd(), '.env')
+  : path.resolve(__dirname, '.env');
+
+require("dotenv").config({ path: envPath });
+console.log(`📡 Loading environment from: ${envPath}`);
 
 const config = {
   port: process.env.PORT || 4000,

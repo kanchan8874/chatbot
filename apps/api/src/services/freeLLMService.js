@@ -38,9 +38,11 @@ class FreeLLMService {
 
       switch (context.type) {
         case 'qa':
-          const langInstruction = detectedLanguage !== 'eng' && detectedLanguage !== 'und' ? 'Please respond in the same language as the user\'s query (Hindi/English mix is acceptable).' : 'Please respond in English.';
           systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
 Answer questions accurately using ONLY the provided information.
+
+LANGUAGE RULE:
+- You MUST respond ONLY in English. Even if the user asks in Hindi, Hinglish, or any other language, your answer must be in clear, professional English.
 
 RESPONSE FORMATTING RULES (CRITICAL):
 1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
@@ -52,8 +54,7 @@ RESPONSE FORMATTING RULES (CRITICAL):
 4. Use bullet points instead of long paragraphs
 5. Be conversational, polite, and professional
 6. Answer ONLY from the provided answer below
-7. Do NOT add information not in the provided answer
-8. " + langInstruction + "`;
+7. Do NOT add information not in the provided answer`;
 
           userPrompt = `Question: ${userQuestion}
 
@@ -69,13 +70,15 @@ Answer using ONLY the provided answer above:`;
           break;
 
         case 'document':
-          const docLangInstruction = detectedLanguage !== 'eng' && detectedLanguage !== 'und' ? 'Please respond in the same language as the user\'s query (Hindi/English mix is acceptable).' : 'Please respond in English.';
           const chunksText = context.chunks
             .map((chunk, idx) => `[Source ${idx + 1}] (source_id=${chunk.metadata?.source_id || chunk.source || 'unknown'}, chunk_id=${chunk.metadata?.chunk_id || chunk.chunkId || 'unknown'}, score=${chunk.score ?? 'n/a'})\n${chunk.text || chunk.metadata?.text || ''}`)
             .join('\n\n');
 
           systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
 Answer questions using ONLY the retrieved document chunks below.
+
+LANGUAGE RULE:
+- You MUST respond ONLY in English. Even if the user asks in Hindi, Hinglish, or any other language, your answer must be in clear, professional English.
 
 RESPONSE FORMATTING RULES (CRITICAL):
 1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
@@ -87,10 +90,9 @@ RESPONSE FORMATTING RULES (CRITICAL):
 4. Use bullet points instead of long paragraphs
 5. Be conversational, polite, and professional
 6. Answer ONLY using information from the provided chunks
-7. If the needed information is NOT present in the chunks, explicitly respond: "I don’t have enough information from the provided sources."
+7. If the needed information is NOT present in the chunks, explicitly respond: "I don’t have enough verified information from the provided sources to answer this question."
 8. Do NOT make up information
-9. Add inline citations in the answer using [S1], [S2] referring to the numbered sources
-10. " + docLangInstruction + "`;
+9. Add inline citations in the answer using [S1], [S2] referring to the numbered sources`;
 
           userPrompt = `Question: ${userQuestion}
 

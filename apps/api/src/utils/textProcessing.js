@@ -54,81 +54,74 @@ function hasMeaningfulOverlap(query, candidateQuestion) {
   return overlapCount > 0;
 }
 
-// Hindi/English translation mappings for common business terms
-const translationMap = {
-  // Services related
-  'services': ['service', 'services', 'seva', 'sevayen', 'kya', 'kya', 'kya', 'provide', 'provide', 'krta', 'karta', 'hai', 'hai'],
-  'service': ['service', 'services', 'seva', 'sevayen', 'kya', 'kya', 'kya', 'provide', 'provide', 'krta', 'karta', 'hai', 'hai'],
-  'seva': ['service', 'services', 'seva', 'sevayen', 'kya', 'kya', 'kya', 'provide', 'provide', 'krta', 'karta', 'hai', 'hai'],
-  'sevayen': ['service', 'services', 'seva', 'sevayen', 'kya', 'kya', 'kya', 'provide', 'provide', 'krta', 'karta', 'hai', 'hai'],
-  
-  // What related
-  'what': ['what', 'kya', 'kya', 'kya', 'kya'],
-  'kya': ['what', 'kya', 'kya', 'kya', 'kya'],
-  
-  // Does related
-  'does': ['does', 'krta', 'karta', 'hai', 'hai', 'provide'],
-  'krta': ['does', 'krta', 'karta', 'hai', 'hai', 'provide'],
-  'karta': ['does', 'krta', 'karta', 'hai', 'hai', 'provide'],
-  'hai': ['does', 'krta', 'karta', 'hai', 'hai', 'provide'],
-  
-  // Provide related
-  'provide': ['provide', 'provide', 'krta', 'karta', 'de', 'dena', 'services', 'seva'],
-  'de': ['provide', 'provide', 'krta', 'karta', 'de', 'dena', 'services', 'seva'],
-  'dena': ['provide', 'provide', 'krta', 'karta', 'de', 'dena', 'services', 'seva'],
-  
-  // Company related
-  'company': ['company', 'company', 'firma', 'sangathan', 'organisation', 'organization'],
-  'firma': ['company', 'company', 'firma', 'sangathan', 'organisation', 'organization'],
-  'sangathan': ['company', 'company', 'firma', 'sangathan', 'organisation', 'organization'],
-  
-  // Mobiloitte related
-  'mobiloitte': ['mobiloitte', 'mobilo', 'company', 'firma'],
-  'mobilo': ['mobiloitte', 'mobilo', 'company', 'firma'],
-  
-  // Job related
-  'job': ['job', 'naukri', 'kam', 'work'],
-  'naukri': ['job', 'naukri', 'kam', 'work'],
-  'kam': ['job', 'naukri', 'kam', 'work'],
-  'work': ['job', 'naukri', 'kam', 'work'],
-  
-  // Available related
-  'available': ['available', 'avilable', 'hai', 'mila', 'mil', 'milti'],
-  'avilable': ['available', 'available', 'hai', 'mila', 'mil', 'milti'],
-  'hai': ['available', 'avilable', 'hai', 'mila', 'mil', 'milti'],
-  'mila': ['available', 'avilable', 'hai', 'mila', 'mil', 'milti'],
-  'mil': ['available', 'avilable', 'hai', 'mila', 'mil', 'milti'],
-  'milti': ['available', 'avilable', 'hai', 'mila', 'mil', 'milti'],
-  
-  // Opening related
-  'opening': ['opening', 'khul', 'khuli', 'job', 'naukri'],
-  'khul': ['opening', 'khul', 'khuli', 'job', 'naukri'],
-  'khuli': ['opening', 'khul', 'khuli', 'job', 'naukri'],
-  
-  // This related
-  'this': ['this', 'ye', 'yeh', 'yah', 'yahi'],
-  'ye': ['this', 'ye', 'yeh', 'yah', 'yahi'],
-  'yeh': ['this', 'ye', 'yeh', 'yah', 'yahi'],
-  'yah': ['this', 'ye', 'yeh', 'yah', 'yahi'],
-  'yahi': ['this', 'ye', 'yeh', 'yah', 'yahi'],
-};
-
 // Get expanded tokens for multilingual matching
 function getExpandedTokens(text) {
-  const originalTokens = normalizeText(text).split(" ");
+  if (!text) return [];
+  
+  // Normalize and strip punctuation, then split into tokens
+  const originalTokens = normalizeText(text)
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "") // Strip punctuation
+    .split(/\s+/)
+    .filter(t => t);
+    
   const allTokens = new Set(originalTokens);
   
   // Add synonyms for each token
   originalTokens.forEach(token => {
+    // Check direct match
     if (translationMap[token]) {
-      translationMap[token].forEach(synonym => {
-        allTokens.add(synonym);
-      });
+      translationMap[token].forEach(synonym => allTokens.add(synonym));
+    }
+    
+    // Check for possessive 's or common typos if not matched
+    const baseWord = token.replace(/'s$/, "");
+    if (translationMap[baseWord]) {
+      translationMap[baseWord].forEach(synonym => allTokens.add(synonym));
     }
   });
   
   return Array.from(allTokens);
 }
+
+// Hindi/English translation mappings for common business terms
+const translationMap = {
+  // Mobiloitte related (including typos)
+  mobiloitte: ['mobiloitte', 'mobiloite', 'mobilo', 'company'],
+  mobiloite: ['mobiloitte', 'mobiloite', 'mobilo', 'company'],
+  mobilo: ['mobiloitte', 'mobiloite', 'mobilo', 'company'],
+
+  // Services related
+  services: ['service', 'services', 'provide', 'offering', 'offerings'],
+  service: ['service', 'services', 'provide', 'offering', 'offerings'],
+  offering: ['service', 'services', 'provide', 'offering', 'offerings'],
+  offerings: ['service', 'services', 'provide', 'offering', 'offerings'],
+
+  // Information related
+  information: ['information', 'info', 'details', 'detail', 'data'],
+  info: ['information', 'info', 'details', 'detail', 'data'],
+  details: ['information', 'info', 'details', 'detail', 'data'],
+  detail: ['information', 'info', 'details', 'detail', 'data'],
+
+  // Company related
+  company: ['company', 'organization', 'organisation', 'firm', 'business'],
+  organization: ['company', 'organization', 'organisation', 'firm', 'business'],
+  organisation: ['company', 'organization', 'organisation', 'firm', 'business'],
+  firm: ['company', 'organization', 'organisation', 'firm', 'business'],
+  business: ['company', 'organization', 'organisation', 'firm', 'business'],
+  
+  // Generic expansion
+  what: ['what'],
+  does: ['does', 'provide'],
+  provide: ['provide', 'services', 'service'],
+  job: ['job', 'work', 'career', 'opening', 'openings'],
+  work: ['job', 'work', 'career'],
+  career: ['job', 'work', 'career'],
+  opening: ['opening', 'job', 'openings'],
+  openings: ['opening', 'job', 'openings'],
+  hq: ['hq', 'headquarters', 'location', 'office', 'address'],
+  headquarters: ['hq', 'headquarters', 'location', 'office', 'address'],
+  this: ['this']
+};
 
 module.exports = {
   normalizeText,
