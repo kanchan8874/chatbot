@@ -6,8 +6,6 @@ import { useAuth } from "../context/AuthContext";
 import { API_ENDPOINTS } from "../config/api";
 import TypingMessage from "./TypingMessage";
 
-// voiceUtils will be initialized after component mounts
-let voiceUtils = null;
 
 export default function ChatbotModal({ isOpen, onClose }) {
   const { user, isAuthenticated } = useAuth();
@@ -18,107 +16,12 @@ export default function ChatbotModal({ isOpen, onClose }) {
   const [expandedMessages, setExpandedMessages] = useState(new Set()); // Track expanded "Show more" messages
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speechError, setSpeechError] = useState(null);
   const [selectedLanguage, setSelectedLanguage] = useState('en-US'); // Default language
-  const [voiceSupported, setVoiceSupported] = useState(false); // Track if voice features are supported
-  const [isVoiceMode, setIsVoiceMode] = useState(false); // Track if current interaction is via voice
-
-  // Determine user role for role-aware content
+  const sessionIdRef = useRef(null); // Stable session ID for context persistence
   const userRole = isAuthenticated ? user?.role || "client" : "client";
   const isEmployee = userRole === "employee";
   const isAdmin = userRole === "admin";
 
-  // Toggle speech recognition
-  const toggleListening = async () => {
-    if (!voiceUtils || !voiceSupported) {
-      setSpeechError('Speech recognition not supported in this browser');
-      return;
-    }
-
-    if (isListening) {
-      voiceUtils.stopListening();
-      setIsListening(false);
-    } else {
-      // Set Voice Mode to TRUE when user initiates voice interaction
-      setIsVoiceMode(true);
-
-      // Check microphone permission before starting
-      const permissionStatus = await voiceUtils.checkMicrophonePermission();
-      
-      if (permissionStatus === 'denied') {
-        // ... (Error handling remains same)
-      }
-      
-      setSpeechError(null);
-      
-      // Call startListening and handle the result
-      try {
-        const result = await voiceUtils.startListening(
-          (transcript) => {
-            setInputText(transcript);
-            // Pass true to force voice mode for this specific send
-            handleSend(transcript, true); 
-            setIsListening(false);
-          },
-          (error) => {
-            // ... (Error handling remains same)
-            setIsListening(false);
-          },
-          () => {
-            // onEnd callback
-            setIsListening(false);
-          },
-          selectedLanguage 
-        );
-        
-        if (result) {
-          setIsListening(true);
-        } else {
-          setIsListening(false);
-        }
-      } catch (error) {
-        console.error('Error starting speech recognition:', error);
-        setSpeechError('Failed to start speech recognition. Please check browser permissions.');
-        setIsListening(false);
-      }
-    }
-  };
-
-  // Text to speech function
-  const speakText = (text) => {
-    if (!text) {
-      console.warn('No text provided for speech synthesis');
-      return;
-    }
-
-    if (!voiceUtils || !voiceSupported) {
-      console.warn('Speech synthesis not supported in this browser');
-      return;
-    }
-
-    if (isSpeaking) {
-      voiceUtils.cancelSpeech();
-      setIsSpeaking(false);
-      return;
-    }
-
-    // Ensure we stop listening if we start speaking
-    if (isListening) {
-      voiceUtils.stopListening();
-      setIsListening(false);
-    }
-
-    const success = voiceUtils.speakText(text, selectedLanguage); // Use selected language
-    if (success) {
-      setIsSpeaking(true);
-      // Update speaking state when speech ends
-      setTimeout(() => {
-        setIsSpeaking(false);
-      }, text.length * 50); // Rough estimation of speech duration
-    }
-  };
 
   // Role-based popular topics
   const getPopularTopics = () => {
@@ -156,26 +59,26 @@ export default function ChatbotModal({ isOpen, onClose }) {
   const getSkillSpotlight = () => {
     if (isEmployee) {
       return [
-        { 
+        {
           text: "Get quick answers on leave, holidays and HR policies",
           query: "What is Mobiloitte's leave policy and holiday calendar? How can I contact HR for policy questions?"
         },
-        { 
+        {
           text: "Understand payroll timelines, reimbursement and salary structure basics",
           query: "How does payroll processing work? What are the salary structure and reimbursement timelines?"
         },
-        { 
+        {
           text: "Learn about attendance rules, shift timings and work-from-home policy",
           query: "What are the standard working hours, attendance rules, and work-from-home policy?"
         },
       ];
     } else {
       return [
-        { 
+        {
           text: "Get instant answers about Mobiloitte's services",
           query: "What services does Mobiloitte provide?"
         },
-        { 
+        {
           text: "Find contact information and company details",
           query: "How can I contact Mobiloitte? What is the company information?"
         },
@@ -184,24 +87,16 @@ export default function ChatbotModal({ isOpen, onClose }) {
   };
 
   const handleTopicClick = async (query) => {
-    setIsVoiceMode(false); // Use Text Mode for clicks
     setInputText(query);
-    await handleSend(query, false);
+    await handleSend(query);
     // Keep focus
     setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
   };
 
-  const handleSend = async (text, overrideVoiceMode) => {
+  const handleSend = async (text) => {
     if (!text.trim() || isLoading) return;
-
-    // Determine if we should speak based on override or current state
-    // If overrideVoiceMode provided (from mic/topic), use it. Else use default (false for typing)
-    const shouldSpeak = overrideVoiceMode !== undefined ? overrideVoiceMode : false;
-    
-    // Update state to match this interaction
-    setIsVoiceMode(shouldSpeak);
 
     const userMessage = {
       id: `u-${Date.now()}`,
@@ -215,7 +110,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
 
     try {
       const token = localStorage.getItem("token");
-      
+
       const response = await fetch(API_ENDPOINTS.CHAT.MESSAGE, {
         method: "POST",
         headers: {
@@ -224,54 +119,36 @@ export default function ChatbotModal({ isOpen, onClose }) {
         },
         body: JSON.stringify({
           message: text,
-          sessionId: `chatbot-modal-${Date.now()}`,
+          sessionId: sessionIdRef.current || `fallback-${Date.now()}`,
           authToken: token,
+          language: selectedLanguage,
         }),
       });
 
       const data = await response.json();
-      
-      // Determine if we should suppress speech (invalid queries)
-      const contextType = data.context?.type;
-      const suppressSpeech = contextType === 'gibberish' || contextType === 'profanity_detected';
-      const finalShouldSpeak = shouldSpeak && !suppressSpeech;
 
-      // Handle formatted responses (Kenyt AI style)
+      // Handle formatted responses (Unified into ONE bubble)
       if (data.formatted && data.chunks && Array.isArray(data.chunks)) {
-        // Create multiple message bubbles from chunks
-        const chunkMessages = data.chunks.map((chunk, index) => ({
-          id: `a-${Date.now()}-${index}`,
+        const unifiedMessage = {
+          id: `a-${Date.now()}`,
           role: "assistant",
-          content: chunk.content || '',
-          chunkType: chunk.type || 'text',
-          chunkData: chunk, // Store full chunk data for structured rendering
-          isVoiceContext: shouldSpeak, // NEW: Capture voice context
-        }));
-        
-        setMessages((prev) => [...prev, ...chunkMessages]);
-        
-        // Speak the first chunk of the response ONLY if permitted
-        if (chunkMessages.length > 0 && finalShouldSpeak) {
-          speakText(chunkMessages[0].content);
-        }
+          content: data.response || "",
+          chunks: data.chunks,
+        };
+
+        setMessages((prev) => [...prev, unifiedMessage]);
       } else {
         // Fallback: Single message (backward compatibility)
         const aiMessage = {
           id: `a-${Date.now()}`,
           role: "assistant",
           content: data.response,
-          isVoiceContext: shouldSpeak, // NEW: Capture voice context
         };
         setMessages((prev) => [...prev, aiMessage]);
-        
-        // Speak response ONLY if permitted
-        if (finalShouldSpeak) {
-          speakText(data.response);
-        }
       }
     } catch (error) {
       console.error("Error calling chat API:", error);
-      
+
       const errorMessage = {
         id: `e-${Date.now()}`,
         role: "assistant",
@@ -290,7 +167,7 @@ export default function ChatbotModal({ isOpen, onClose }) {
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend(inputText, false); // Explicitly disable voice mode for typing
+      handleSend(inputText); // Text mode
       // Keep focus on input after Enter key press
       setTimeout(() => {
         inputRef.current?.focus();
@@ -301,37 +178,31 @@ export default function ChatbotModal({ isOpen, onClose }) {
   // Initialize voiceUtils and reset messages + lock body scroll when modal opens
   useEffect(() => {
     if (isOpen) {
-      // Initialize voiceUtils on the client side
-      if (typeof window !== 'undefined' && voiceUtils === null) {
-        import("../utils/voiceUtils").then((module) => {
-          voiceUtils = module.default;
-          setVoiceSupported(voiceUtils.isSupported);
-        }).catch((error) => {
-          console.error('Failed to load voiceUtils:', error);
-          setVoiceSupported(false);
-        });
-      } else if (voiceUtils) {
-        setVoiceSupported(voiceUtils.isSupported);
-      }
-      
-      setMessages([]);
-      setIsMinimized(false);
       document.body.style.overflow = "hidden";
-      
+      setIsMinimized(false);
+
+      if (!sessionIdRef.current) {
+        sessionIdRef.current = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      }
+
       setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
-
-      return () => {
-        document.body.style.overflow = "";
-      };
     }
+
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [isOpen]);
 
   // Auto-scroll to latest message
   useEffect(() => {
-    if (isOpen && messagesEndRef.current && messages.length > 0) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (isOpen && messagesEndRef.current) {
+      // Small timeout to ensure DOM is fully rendered
+      const timeoutId = setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      }, 100);
+      return () => clearTimeout(timeoutId);
     }
   }, [messages, isOpen, isLoading]);
 
@@ -347,11 +218,11 @@ export default function ChatbotModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  const assistantTitle = isAdmin 
-    ? "Mobiloitte Admin Assistant" 
-    : isEmployee 
-    ? "Mobiloitte HR Assistant" 
-    : " AI Assistant  ";
+  const assistantTitle = isAdmin
+    ? "Mobiloitte Admin Assistant"
+    : isEmployee
+      ? "Mobiloitte HR Assistant"
+      : " AI Assistant  ";
 
   return (
     <>
@@ -364,9 +235,8 @@ export default function ChatbotModal({ isOpen, onClose }) {
 
       {/* Modal Container - World-class design */}
       <div
-        className={`fixed bottom-4 right-4 z-50 w-[420px] sm:w-[460px] bg-white rounded-xl shadow-3xl transition-all duration-300 ease-out ${
-          isMinimized ? "h-20" : "h-[740px] max-h-[75vh]"
-        } flex flex-col overflow-hidden`}
+        className={`fixed bottom-4 right-4 z-50 w-[420px] sm:w-[460px] bg-white rounded-xl shadow-3xl transition-all duration-300 ease-out ${isMinimized ? "h-20" : "h-[760px] max-h-[78vh]"
+          } flex flex-col overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -442,273 +312,213 @@ export default function ChatbotModal({ isOpen, onClose }) {
 
         {!isMinimized && (
           <>
-            {/* Content Area - Spacious */}
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-6 bg-[#FFFBFB]">
-              {/* Empty State - Welcome Screen */}
-              {messages.length === 0 ? (
-                <div className="space-y-6">
-                  {/* Welcome Message Bubble - With Avatar (Image 2 style) */}
-                  <div className="bg-white rounded-2xl rounded-tr-sm p-4 shadow-md border border-gray-200/50 animate-slideInFromRight relative">
-                    {/* Speech Bubble Tail - Left Top */}
-                    <div 
-                      className="absolute -left-1.5 top-0 w-0 h-0"
-                      style={{
-                        borderRight: '8px solid white',
-                        borderTop: '8px solid white',
-                        borderBottom: '8px solid transparent',
-                        borderLeft: '8px solid transparent',
-                      }}
-                    />
-                    <div className="flex items-start gap-3">
-                      {/* Avatar - Using provided image (Image 3) */}
-                      <div className="h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50 flex-shrink-0">
-                        <img
-                          src="/assets/chatbot-avatar.png"
-                          alt="Chatbot Assistant"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-800 leading-relaxed">
-                          Hi! I'm your <b>Mobiloitte</b>  {assistantTitle}. <br /> What would you like to do today? <br /> I'm here to help! 😊 
+            {/* Content Area - Persistent Scrollable Flow */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-6 bg-[#FFFBFB] scrollbar-hide">
+              <div className="space-y-6">
+                {/* Welcome Message Bubble - Always at top */}
+                <div className="bg-white rounded-2xl rounded-tr-sm p-4 shadow-md border border-gray-200/50 animate-slideInFromRight relative">
+                  <div
+                    className="absolute -left-1.5 top-0 w-0 h-0"
+                    style={{
+                      borderRight: '8px solid white',
+                      borderTop: '8px solid white',
+                      borderBottom: '8px solid transparent',
+                      borderLeft: '8px solid transparent',
+                    }}
+                  />
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50 flex-shrink-0">
+                      <img
+                        src="/assets/chatbot-avatar.png"
+                        alt="Chatbot Assistant"
+                        className="w-full h-full object-cover"
+                      />0
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-800 leading-relaxed">
+                        Hi! I'm your <b>Mobiloitte</b> {assistantTitle}. <br /> What would you like to do today? <br /> I'm here to help! 😊
+                      </p>
+                      {!isAuthenticated && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          <Link
+                            href="/login"
+                            className="text-[#E31E24] hover:underline font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onClose();
+                            }}
+                          >
+                            Sign in.
+                          </Link>
                         </p>
-                        {!isAuthenticated && (
-                          <p className="text-xs text-gray-500 mt-2">
-                            <Link
-                              href="/login"
-                              className="text-[#E31E24] hover:underline font-medium"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onClose();
-                              }}
-                            >
-                              Sign in.
-                            </Link>{" "}
-                            
-                          </p>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Popular Topics - Sleeker, thinner pills with refined styling */}
-                  <div className="flex flex-wrap gap-2">
-                    {getPopularTopics().map((topic, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleTopicClick(topic.query)}
-                        className="group flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-400/60 rounded-full hover:border-[#E31E24]/30 hover:bg-[#FFF8F8] transition-all duration-300 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/10 shadow-[0_4px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.08)] hover:scale-[1.03] active:scale-95 animate-fadeInUp"
-                        style={{ animationDelay: `${index * 0.05}s` }}
-                      >
-                        <span className="text-base group-hover:scale-110 transition-transform duration-300">{topic.icon}</span>
-                        <span className="text-[13px] font-medium text-gray-700 group-hover:text-[#E31E24] transition-colors duration-300">
-                          {topic.label}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-
                 </div>
-              ) : (
-                /* Chat Messages - WhatsApp Style */
-                <div className="space-y-3 pb-2">
-                  {messages.map((msg, index) => (
-                    <div
-                      key={msg.id}
-                      className={`flex items-start gap-2.5 animate-fadeIn ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+
+                {/* Popular Topics - Persistent but scrollable with content */}
+                <div className="flex flex-wrap gap-2">
+                  {getPopularTopics().map((topic, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleTopicClick(topic.query)}
+                      className="group flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-300/60 rounded-full hover:border-[#E31E24]/30 hover:bg-[#FFF8F8] transition-all duration-300 text-left focus:outline-none focus:ring-2 focus:ring-[#E31E24]/10 shadow-[0_4px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.08)] hover:scale-[1.03] active:scale-95 animate-fadeInUp"
                       style={{ animationDelay: `${index * 0.05}s` }}
                     >
-                      {/* Bot Avatar - Using provided image (Image 3) */}
-                      {msg.role === "assistant" && (
-                        <div className="flex-shrink-0 h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50" aria-hidden="true">
-                          <img
-                            src="/assets/chatbot-avatar.png"
-                            alt="Chatbot Assistant"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      )}
-                      {/* Message Card - WhatsApp Style Speech Bubble */}
+                      <span className="text-base group-hover:scale-110 transition-transform duration-300">{topic.icon}</span>
+                      <span className="text-[13px] font-medium text-gray-700 group-hover:text-[#E31E24] transition-colors duration-300">
+                        {topic.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Chat Messages */}
+                {messages.length > 0 && (
+                  <div className="space-y-3 pb-2 pt-2 border-t border-gray-100">
+                    {messages.map((msg, index) => (
                       <div
-                        className={`max-w-[85%] px-5 py-4 shadow-md relative ${
-                          msg.role === "user"
+                        key={msg.id}
+                        className={`flex items-start gap-2.5 animate-fadeIn ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                        style={{ animationDelay: `${index * 0.05}s` }}
+                      >
+                        {msg.role === "assistant" && (
+                          <div className="flex-shrink-0 h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50">
+                            <img
+                              src="/assets/chatbot-avatar.png"
+                              alt="Chatbot Assistant"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+                        <div
+                          className={`max-w-[85%] px-5 py-4 shadow-md relative ${msg.role === "user"
                             ? "bg-gradient-to-br from-[#E31E24] to-[#C41E3A] text-white rounded-2xl rounded-tl-sm"
                             : "bg-white text-gray-900 rounded-2xl rounded-tr-sm border border-gray-200/50"
-                        }`}
-                        style={{
-                          position: 'relative',
-                        }}
-                      >
-                        {/* WhatsApp Style Tail - Left Top Corner (Image 4 style) */}
-                        {msg.role === "user" ? (
-                          <div 
-                            className="absolute -left-1.5 top-0 w-0 h-0"
-                            style={{
-                              borderRight: '8px solid #E31E24',
-                              borderTop: '8px solid #E31E24',
-                              borderBottom: '8px solid transparent',
-                              borderLeft: '8px solid transparent',
-                            }}
-                          />
-                        ) : (
-                          <div 
-                            className="absolute -left-1.5 top-0 w-0 h-0"
-                            style={{
-                              borderRight: '8px solid white',
-                              borderTop: '8px solid white',
-                              borderBottom: '8px solid transparent',
-                              borderLeft: '8px solid transparent',
-                            }}
-                          />
-                        )}
-                        {/* Render structured content */}
-                        {msg.chunkType === 'structured' && msg.chunkData ? (
-                          <div className="space-y-2.5">
-                            {msg.chunkData.greeting && (
-                              <p className={`text-sm leading-relaxed mb-2 ${msg.role === "user" ? "text-white/90" : "text-gray-700"}`}>
-                                {msg.chunkData.greeting}
-                              </p>
-                            )}
-                            {msg.chunkData.title && (
-                              <h4 className={`text-sm font-semibold mb-2 ${msg.role === "user" ? "text-white" : "text-gray-900"}`}>
-                                {msg.chunkData.title}
-                              </h4>
-                            )}
-                          </div>
-                        ) : msg.chunkType === 'bullets' && msg.chunkData?.items ? (
-                          <ul className="space-y-2 list-none pl-0">
-                            {msg.chunkData.items.map((item, idx) => (
-                              <li key={idx} className={`text-sm leading-relaxed flex items-start gap-2.5 ${msg.role === "user" ? "text-white" : "text-gray-800"}`}>
-                                <span className={`mt-1 flex-shrink-0 font-bold ${msg.role === "user" ? "text-white" : "text-[#E31E24]"}`}>•</span>
-                                <span className="flex-1">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                            {msg.role === "assistant" && index === messages.length - 1
-                              ? <TypingMessage text={msg.content} typingSpeed={15} />
-                              : msg.content}
-                          </p>
-                        )}
-                        {/* Add speak button for assistant messages */}
-                        {msg.role === "assistant" && msg.isVoiceContext && (
-                          <div className="mt-2 flex justify-end">
-                            <button
-                              onClick={() => speakText(msg.content)}
-                              disabled={isSpeaking || !voiceSupported}
-                              className={`text-xs p-1 rounded ${
-                                isSpeaking || !voiceSupported
-                                  ? 'text-gray-400 cursor-not-allowed' 
-                                  : 'text-[#E31E24] hover:text-[#C41E3A] cursor-pointer'
-                              }`}
-                              aria-label={isSpeaking ? "Speaking..." : "Listen to message"}
-                              title={!voiceSupported ? "Text-to-speech not supported in this browser" : "Listen to message"}
-                            >
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                              </svg>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      {/* User Avatar - REMOVED as per user request (Image shows only message bubble, no avatar) */}
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                  
-                  {/* Loading Indicator - WhatsApp Style */}
-                  {isLoading && (
-                    <div className="flex items-start justify-start gap-2.5 animate-fadeIn">
-                      <div className="flex-shrink-0 h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50" aria-hidden="true">
-                        <img
-                          src="/assets/chatbot-avatar.png"
-                          alt="Chatbot Assistant"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="bg-white rounded-2xl rounded-tr-sm px-4 py-2.5 border border-gray-200/50 shadow-md relative">
-                        {/* Speech Bubble Tail - Left Top */}
-                        <div 
-                          className="absolute -left-1.5 top-0 w-0 h-0"
-                          style={{
-                            borderRight: '8px solid white',
-                            borderTop: '8px solid white',
-                            borderBottom: '8px solid transparent',
-                            borderLeft: '8px solid transparent',
-                          }}
-                        />
-                        <div className="flex gap-1.5">
-                          <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                          <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                            }`}
+                        >
+                          {msg.role === "user" ? (
+                            <div
+                              className="absolute -left-1.5 top-0 w-0 h-0"
+                              style={{
+                                borderRight: '8px solid #E31E24',
+                                borderTop: '8px solid #E31E24',
+                                borderBottom: '8px solid transparent',
+                                borderLeft: '8px solid transparent',
+                              }}
+                            />
+                          ) : (
+                            <div
+                              className="absolute -left-1.5 top-0 w-0 h-0"
+                              style={{
+                                borderRight: '8px solid white',
+                                borderTop: '8px solid white',
+                                borderBottom: '8px solid transparent',
+                                borderLeft: '8px solid transparent',
+                              }}
+                            />
+                          )}
+
+                          {/* Message Content */}
+                          {msg.chunks ? (
+                            <div className="space-y-4">
+                              {msg.chunks.map((chunk, cIndex) => (
+                                <div key={cIndex} className="animate-fadeIn" style={{ animationDelay: `${cIndex * 0.1}s` }}>
+                                  {chunk.type === 'structured' ? (
+                                    <div className="space-y-2">
+                                      {chunk.greeting && <p className="text-sm leading-relaxed text-gray-700">{chunk.greeting}</p>}
+                                      {chunk.title && <h4 className="text-sm font-semibold text-gray-900">{chunk.title}</h4>}
+                                    </div>
+                                  ) : chunk.type === 'bullets' ? (
+                                    <ul className="space-y-2 list-none pl-0 mt-1">
+                                      {chunk.items.map((item, iIndex) => (
+                                        <li key={iIndex} className="text-sm leading-relaxed flex items-start gap-2.5 text-gray-800">
+                                          <span className="mt-1 flex-shrink-0 font-bold text-[#E31E24]">•</span>
+                                          <span className="flex-1">{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <div className="text-sm leading-relaxed whitespace-pre-wrap break-words text-gray-800">
+                                      {msg.role === "assistant" && index === messages.length - 1 && cIndex === msg.chunks.length - 1
+                                        ? <TypingMessage text={chunk.content} typingSpeed={15} />
+                                        : chunk.content}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                              {msg.role === "assistant" && index === messages.length - 1
+                                ? <TypingMessage text={msg.content} typingSpeed={15} />
+                                : msg.content}
+                            </p>
+                          )}
                         </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Loading Indicator */}
+                {isLoading && (
+                  <div className="flex items-start justify-start gap-2.5 animate-fadeIn">
+                    <div className="flex-shrink-0 h-10 w-10 rounded-full overflow-hidden shadow-lg ring-2 ring-white/50">
+                      <img
+                        src="/assets/chatbot-avatar.png"
+                        alt="Chatbot Assistant"
+                        className="w-full h-full object-cover"
+                      />
                     </div>
-                  )}
-                </div>
-              )}
+                    <div className="bg-white rounded-2xl rounded-tr-sm px-4 py-2.5 border border-gray-200/50 shadow-md relative">
+                      <div
+                        className="absolute -left-1.5 top-0 w-0 h-0"
+                        style={{
+                          borderRight: '8px solid white',
+                          borderTop: '8px solid white',
+                          borderBottom: '8px solid transparent',
+                          borderLeft: '8px solid transparent',
+                        }}
+                      />
+                      <div className="flex gap-1.5">
+                        <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <div className="h-2 w-2 bg-[#E31E24] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Scroll Sentry - Moved to absolute bottom to include loading indicator */}
+                <div ref={messagesEndRef} className="h-4" aria-hidden="true" />
+
+                {/* Safe Bottom Padding - Extra space to clear input area */}
+                <div className="h-20" aria-hidden="true" />
+              </div>
             </div>
 
             {/* Input Area - Attractive Style (Image 3 style) */}
             <div className="border-t border-[#FFE5E5] bg-gradient-to-b from-white to-[#FFFBFB] px-2 py-4">
               <div className="flex items-center gap-3">
-                {/* Language Selection Dropdown */}
-                <select
-                  value={selectedLanguage}
-                  onChange={(e) => setSelectedLanguage(e.target.value)}
-                  className="p-2.5 rounded-xl border-2 border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30"
-                  disabled={isLoading}
-                  aria-label="Select language"
-                >
-                  <option value="en-US">English</option>
-                  <option value="en-IN">Hinglish</option>
-                  
-                </select>
-                
-                {/* Voice Input Button */}
-                <button
-                  onClick={toggleListening}
-                  disabled={isLoading || !voiceSupported}
-                  className={`p-2.5 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#E31E24]/20 active:scale-95 ${
-                    isListening 
-                      ? 'bg-red-100 border-red-300 text-red-600 animate-pulse' 
-                      : voiceSupported 
-                        ? 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-[#FFE5E5] hover:text-[#E31E24]' 
-                        : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                  }`}
-                  aria-label={isListening ? "Stop listening" : "Start voice input"}
-                  title={isListening ? "Click to stop listening" : !voiceSupported ? "Speech recognition not supported in this browser" : "Click to start voice input - make sure microphone access is allowed"}
-                >
-                  {isListening ? (
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16V8z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h18" />
-                    </svg>
-                  ) : (
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                  )}
-                </button>
-                
-                {/* Input Field - Attractive rounded style */}
-                <input
+
+
+                <textarea
                   ref={inputRef}
-                  type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={handleKeyPress}
                   placeholder="Type your question here....."
-                  className="flex-1 min-w-0 h-12 px-6 bg-white border-2 border-gray-300 rounded-3xl focus:outline-none focus:ring-2 focus:ring-[#E31E24]/30 focus:border-[#E31E24] transition-all duration-200 text-sm text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                  className="flex-1 min-w-0 py-3 px-6 bg-white border border-gray-300 rounded-[12px] focus:outline-none focus:ring-1 focus:ring-[#E31E24]/80 transition-all duration-200 text-[14px] text-gray-900 placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed resize-none max-h-32 overflow-y-auto scrollbar-hide shadow-sm"
+                  rows="1"
                   disabled={isLoading}
                   aria-label="Chat input"
                 />
-                
+
                 {/* Send Button - Attractive circular style */}
                 <button
                   onClick={() => {
-                    handleSend(inputText, false); // Explicitly disable voice mode
+                    handleSend(inputText); // Explicitly disable voice mode
                     // Keep focus on input after button click
                     setTimeout(() => {
                       inputRef.current?.focus();
@@ -719,33 +529,16 @@ export default function ChatbotModal({ isOpen, onClose }) {
                   aria-label="Send message"
                   type="button"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  <svg
+                    className="h-5 w-5 translate-x-[1px]"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M2 21l21-9L2 3v7l15 2-15 2z" />
                   </svg>
                 </button>
               </div>
-              
-              {/* Voice input status message */}
-              {isListening && (
-                <div className="mt-2 text-center text-sm text-gray-600">
-                  Listening... Speak now ({selectedLanguage})
-                </div>
-              )}
-              
-              {speechError && (
-                <div className="mt-2 text-center text-sm text-red-600">
-                  {speechError}
-                  {speechError && (speechError.toLowerCase().includes('denied') || speechError.toLowerCase().includes('not-allowed') || speechError.includes('check your browser permissions')) && (
-                    <div className="mt-1 text-xs text-red-500 space-y-1">
-                      <div>To fix this: Click the lock icon in the address bar → Site Settings → Allow Microphone</div>
-                      <div>Or update browser permissions directly:</div>
-                      <div className="font-medium">
-                        Chrome: Settings → Privacy and Security → Site Settings → Microphone → Find this site → Allow
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </>
         )}
@@ -799,6 +592,17 @@ export default function ChatbotModal({ isOpen, onClose }) {
         
         .animate-fadeIn {
           animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .scrollbar-hide {
+          -ms-overflow-style: none;  /* IE and Edge */
+          scrollbar-width: none;  /* Firefox */
         }
       `}</style>
     </>

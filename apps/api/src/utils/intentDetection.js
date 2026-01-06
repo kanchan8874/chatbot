@@ -8,6 +8,7 @@ const { normalizeText } = require('./textProcessing');
 // Map high-level topic intents to canonical CSV questions
 const INTENT_TO_CANONICAL_QUESTION = {
   services_overview: "what services does mobiloitte provide?",
+  company_overview: "what services does mobiloitte provide?", // Use services as proxy for company info
   ai_solutions: "what are traditional ai solutions?",
   traditional_ai: "what are traditional ai solutions?",
   blockchain_solutions: "how does mobiloitte use ai for blockchain?",
@@ -16,6 +17,9 @@ const INTENT_TO_CANONICAL_QUESTION = {
   experience: "how many years of experience does mobiloitte have?",
   technologies: "what technologies does mobiloitte use for ai?",
   contact: "how can i contact mobiloitte?",
+  location: "how can i contact mobiloitte?", // Use contact as proxy for location if specific location missing
+  website: "how can i contact mobiloitte?",  // Use contact as proxy for website if specific link missing
+  founder: "how many years of experience does mobiloitte have?", // Fallback if no specific founder info
 };
 
 // HR-specific curated answers
@@ -57,95 +61,32 @@ function detectTopicIntent(normalizedMessage) {
   if (!normalizedMessage) return null;
   const text = normalizedMessage;
 
-  // PRIORITY 1: Services overview
-  if (
-    text.includes("service") || 
-    text.includes("services") || 
-    text.includes("offering") ||
-    text.includes("offerings") ||
-    text.includes("solution") ||
-    text.includes("solutions") ||
-    text.includes("specialize") ||
-    text.includes("specialization") ||
-    text.includes("speciality") ||
-    text.includes("portfolio") ||
-    text.includes("core services") ||
-    text.includes("main offerings") ||
-    text.includes("type of services") ||
-    text.includes("kind of services")
-  ) {
-    if (text.includes("technology") && !text.includes("service") && !text.includes("solution")) {
-      return "technologies";
-    }
+  // PRIORITY: Contact / Location / Website (Specific Facts)
+  if (text.includes("website") || text.includes("site link") || text.includes("official page")) return "website";
+  if (text.includes("address") || text.includes("location") || text.includes("office") || text.includes("where is")) return "location";
+  if (text.includes("contact") || text.includes("reach you") || text.includes("email") || text.includes("phone")) return "contact";
+
+  // PRIORITY: Services overview (Stricter)
+  const servicesKeywords = ["service", "services", "offering", "offerings", "solution", "solutions", "portfolio", "core services"];
+  const hasServiceKeyword = servicesKeywords.some(kw => text.includes(kw));
+  
+  if (hasServiceKeyword) {
+    if (text.includes("technology")) return "technologies";
     return "services_overview";
   }
 
-  // PRIORITY 2: Traditional AI
-  if (
-    text.includes("traditional ai") ||
-    text.includes("traditional ai solution") ||
-    text.includes("traditional ai solutions")
-  ) {
-    return "traditional_ai";
-  }
-
-  // PRIORITY 3: General AI solutions
-  if (
-    (text.includes("ai solution") ||
-    text.includes("ai solutions") ||
-    text.includes("ai offering") ||
-    text.includes("ai offerings")) &&
-    !text.includes("service")
-  ) {
-    return "ai_solutions";
-  }
-
-  // PRIORITY 4: Other specific intents
+  // PRIORITY: Specific Topics
+  if (text.includes("traditional ai")) return "traditional_ai";
   if (text.includes("blockchain")) return "blockchain_solutions";
   if (text.includes("web") && text.includes("mobile")) return "web_mobile_ai";
   
-  if (
-    (text.includes("technology") || text.includes("technologies") || text.includes("tools")) &&
-    !text.includes("service") &&
-    !text.includes("solution")
-  ) {
-    return "technologies";
-  }
-  
-  if (
-    (text.includes("industry") || text.includes("industries") || text.includes("sectors")) &&
-    !text.includes("service") &&
-    !text.includes("solution")
-  ) {
-    return "industries";
-  }
-  
-  if (
-    text.includes("experience") || text.includes("years of experience")
-  ) {
-    return "experience";
-  }
+  if (text.includes("experience") || text.includes("years of experience")) return "experience";
   
   // Training Center specifically
-  if (
-    text.includes("training center") ||
-    text.includes("center for mobile app development") ||
-    text.includes("cmad") ||
-    text.includes("skill development") ||
-    text.includes("internship program")
-  ) {
-    return "training_center";
-  }
-  
-  if (
-    text.includes("contact") ||
-    text.includes("reach you") ||
-    text.includes("get in touch") ||
-    text.includes("email") ||
-    text.includes("phone")
-  ) {
-    return "contact";
-  }
+  if (text.includes("training center") || text.includes("cmad") || text.includes("internship program")) return "training_center";
+
+  // Company Overview
+  if (text.includes("about mobiloitte") || text.includes("about company") || text.includes("tell me about company") || text.includes("what is mobiloitte")) return "company_overview";
 
   return null;
 }
@@ -393,71 +334,30 @@ function classifyIntent(message, userRole) {
     }
   }
   
-  // Founder/director keywords - highest priority
-  const founderKeywords = [
-    "founder", "founders", "director", "directors", "ceo", "chairman", "leadership",
-    "started", "founded", "established", "created", "began", "incorporated"
-  ];
-  
-  const hasFounderKeyword = founderKeywords.some(keyword => lowerMessage.includes(keyword));
-  
-  if (hasFounderKeyword) {
-    return "csv_qa";
-  }
-  
-  const topicKeywords = [
-    "traditional ai", "ai solutions", "ai services", "generative ai",
-    "blockchain", "services", "mobiloitte", "company", "technologies",
-    "industries", "experience", "contact", "about mobiloitte", "about company"
-  ];
-  
-  const hasTopicKeyword = topicKeywords.some(keyword => lowerMessage.includes(keyword));
-  
-  // "Tell me about" queries with topic keywords should go to CSV Q&A
-  if (
-    (lowerMessage.includes("tell me about") || lowerMessage.includes("tell me")) &&
-    hasTopicKeyword
-  ) {
-    return "csv_qa";
-  }
-  
-  // PRIORITIZE Document RAG for detailed/process queries
-  const isDetailed = detectDetailedIntent(lowerMessage);
-  if (isDetailed && ragScore >= 1) {
-    return "document_rag";
-  }
+  // Rule: Founder/Director keywords - High priority specific intent
+  const founderKeywords = ["founder", "cofounder", "co-founder", "director", "ceo", "chairman", "leadership"];
+  const hasFounderKeyword = founderKeywords.some(kw => lowerMessage.includes(kw));
+  if (hasFounderKeyword) return "founder";
 
-  // Decision logic
-  
-  // High-priority: Specific topic intents detected via detectTopicIntent
+  // Rule: Topic specific intents (Services, Location, Website, etc.)
   const topicIntent = detectTopicIntent(lowerMessage);
-  if (topicIntent) {
-    if (topicIntent === "training_center") return "csv_qa"; // Map to CSV for direct match
-    if (isDetailed && ragScore >= 1) return "document_rag";
-    return "csv_qa";
-  }
+  if (topicIntent) return topicIntent;
 
+  // Detailed Process queries
+  const isDetailed = detectDetailedIntent(lowerMessage);
+  if (isDetailed && ragScore >= 1) return "document_rag";
+
+  // Fallback pattern matching
   if (
-    faqScore >= 2 || // Increased threshold for keyword-based FAQ matching
+    faqScore >= 2 || 
     lowerMessage.includes("what is") || 
     lowerMessage.includes("what are") ||
-    lowerMessage.includes("what do you mean") ||
-    (lowerMessage.includes("how do") && hasTopicKeyword) ||
-    (lowerMessage.includes("how to") && hasTopicKeyword) ||
-    (hasTopicKeyword && (lowerMessage.includes("explain") || lowerMessage.includes("define") || lowerMessage.includes("what is meant")))
+    (lowerMessage.includes("how do") && hasTopicKeyword)
   ) {
-    return "csv_qa";
-  } else if (ragScore >= 1 || isDetailed) {
-    return "document_rag";
-  }
-  
-  // Default to CSV Q&A first only if some keywords match
-  if (faqScore >= 1 || hasTopicKeyword) {
     return "csv_qa";
   }
 
-  // If literally nothing matches, we'll eventually hit the refusal in handler
-  return "csv_qa";
+  return "document_rag"; // Default to RAG instead of generic CSV to avoid "Services" fallback
 }
 
 module.exports = {

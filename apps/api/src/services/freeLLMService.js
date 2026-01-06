@@ -36,13 +36,17 @@ class FreeLLMService {
       let systemPrompt = '';
       let userPrompt = '';
 
+      const languageInstruction = (detectedLanguage === 'en-IN' || detectedLanguage === 'hin')
+        ? "- You MUST respond in Hinglish (a mix of Hindi and English) which is natural for Indian users. For example: 'Aapki application processed hai' or 'Please check your leaves balance in the dashboard'. Keep the tone professional but accessible."
+        : "- You MUST respond ONLY in English. Use clear, professional English for all responses.";
+
       switch (context.type) {
         case 'qa':
           systemPrompt = `You are Mobiloitte AI, a helpful assistant for Mobiloitte Group.
 Answer questions accurately using ONLY the provided information.
 
 LANGUAGE RULE:
-- You MUST respond ONLY in English. Even if the user asks in Hindi, Hinglish, or any other language, your answer must be in clear, professional English.
+${languageInstruction}
 
 RESPONSE FORMATTING RULES (CRITICAL):
 1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
@@ -78,7 +82,7 @@ Answer using ONLY the provided answer above:`;
 Answer questions using ONLY the retrieved document chunks below.
 
 LANGUAGE RULE:
-- You MUST respond ONLY in English. Even if the user asks in Hindi, Hinglish, or any other language, your answer must be in clear, professional English.
+${languageInstruction}
 
 RESPONSE FORMATTING RULES (CRITICAL):
 1. Keep responses SHORT and READABLE (maximum 3-5 lines per section)
@@ -105,6 +109,33 @@ Format your answer as:
 - Brief summary (1-2 lines) with a citation if relevant
 
 Answer using ONLY the information from the chunks above:`;
+          break;
+
+        case 'document_fact':
+          const factChunks = context.chunks
+            .map((chunk, idx) => `[Source ${idx + 1}]\n${chunk.text || chunk.metadata?.text || ''}`)
+            .join('\n\n');
+
+          systemPrompt = `You are Mobiloitte AI. Your goal is to provide a grounded, truthful, and helpful answer.
+INTENT: The user is asking for a specific fact (e.g., location, founder, contact).
+
+RULES:
+1. If the retrieved chunks contain the EXACT answer, provide it clearly and concisely.
+2. If the chunks do NOT contain the exact answer but contain HELPFUL RELATED information (like a general contact link or website), provide that as a helpful bridge.
+3. BE HONEST: If you are providing related info instead of the exact fact, start by saying you don't have the specific detail but offer the related info.
+4. Keep the response under 4 lines.
+
+LANGUAGE RULE:
+${languageInstruction}`;
+
+          userPrompt = `User Question: ${userQuestion}
+Retrieved Data:
+${factChunks}
+
+Response Guidelines:
+- If exact fact found: Give it.
+- If not found but related info exists: "I couldn't find the exact [fact], but you can check [related info]..."
+- If nothing relevant exists: "I don't have verified information for this specifically."`;
           break;
 
         case 'employee_data':
@@ -142,6 +173,46 @@ Answer the question using the employee data above:`;
   }
 
   /**
+   * Translate a follow-up question into a standalone query using session history
+   */
+  async translateToStandaloneQuery(userQuestion, sessionHistory = []) {
+    if (!this.client || sessionHistory.length === 0) return userQuestion;
+
+    try {
+      const historyText = sessionHistory
+        .map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.message}`)
+        .join('\n');
+
+      const systemPrompt = `You are a query rewriter. Your task is to rewrite the LAST user question into a standalone, clear query that can be used for search.
+Use the conversation history to resolve pronouns (it, they, its, the company, etc.) and context.
+
+RULES:
+1. Return ONLY the rewritten query.
+2. Do NOT add any preamble or explanation.
+3. If the question is already standalone, return it as is.
+4. If the question is a fragment related to the history, expand it.
+   Example: History mentions 'Mobiloitte'. Question: 'Its founder?' -> Rewritten: 'Who is the founder of Mobiloitte?'`;
+
+      const userPrompt = `History:\n${historyText}\n\nLast Question: ${userQuestion}`;
+
+      const response = await this.client.chat.completions.create({
+        model: 'llama-3.1-8b-instant', // Fast model for rewriting
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0,
+        max_tokens: 100
+      });
+
+      return response.choices[0].message.content.trim();
+    } catch (error) {
+      console.warn("❌ Translation failed, using original query:", error.message);
+      return userQuestion;
+    }
+  }
+
+  /**
    * Fallback response when API not available
    */
   generateFallbackResponse(userQuestion, context) {
@@ -156,7 +227,7 @@ Answer the question using the employee data above:`;
     }
     
     // Priority 3: Document chunks (if available)
-    if (context.type === 'document' && context.chunks && context.chunks.length > 0) {
+    if (context.type === 'document' && (context.chunks && context.chunks.length > 0)) {
       const firstChunk = context.chunks[0].text || context.chunks[0].metadata?.text || '';
       if (firstChunk) {
         return `Based on the information available: ${firstChunk.substring(0, 500)}...`;

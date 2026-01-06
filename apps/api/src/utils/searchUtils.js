@@ -7,6 +7,7 @@ const QAPair = require("../database/models/QAPair");
 const embeddingService = require("../services/embeddingService");
 const pineconeService = require("../services/pineconeService");
 const { normalizeText, generateQuestionHash, hasMeaningfulOverlap, getExpandedTokens } = require('./textProcessing');
+const { isGibberish, escapeRegex } = require('./textValidation');
 const { detectTopicIntent } = require('./intentDetection');
 
 const INTENT_TO_CANONICAL_QUESTION = require('./intentDetection').INTENT_TO_CANONICAL_QUESTION;
@@ -304,12 +305,13 @@ async function searchMongoDBByKeywords(normalizedMessage, audienceFilter, option
     }
     
     founderWords.forEach(word => {
+      const escaped = escapeRegex(word);
       founderQueries.push({
         $or: [
-          { question: { $regex: word, $options: "i" } },
-          { normalizedQuestion: { $regex: word, $options: "i" } },
-          { tags: { $regex: word, $options: "i" } },
-          { category: { $regex: word, $options: "i" } }
+          { question: { $regex: escaped, $options: "i" } },
+          { normalizedQuestion: { $regex: escaped, $options: "i" } },
+          { tags: { $regex: escaped, $options: "i" } },
+          { category: { $regex: escaped, $options: "i" } }
         ]
       });
     });
@@ -335,13 +337,16 @@ async function searchMongoDBByKeywords(normalizedMessage, audienceFilter, option
   // Rule 1: If we have multiple significant words, prefer matches that contain ALL of them (High Precision)
   if (words.length >= 2) {
     keywordQueries.push({
-      $and: words.map(word => ({
-        $or: [
-          { question: { $regex: word, $options: "i" } },
-          { normalizedQuestion: { $regex: word, $options: "i" } },
-          { tags: { $regex: word, $options: "i" } }
-        ]
-      }))
+      $and: words.map(word => {
+        const escaped = escapeRegex(word);
+        return {
+          $or: [
+            { question: { $regex: escaped, $options: "i" } },
+            { normalizedQuestion: { $regex: escaped, $options: "i" } },
+            { tags: { $regex: escaped, $options: "i" } }
+          ]
+        };
+      })
     });
   }
   
@@ -358,11 +363,12 @@ async function searchMongoDBByKeywords(normalizedMessage, audienceFilter, option
     
     // Only add single-word query if the word is NOT weak and reasonable length
     if (!isWeak && word.length > 3) { 
+       const escaped = escapeRegex(word);
        keywordQueries.push({
         $or: [
-          { question: { $regex: word, $options: "i" } },
-          { normalizedQuestion: { $regex: word, $options: "i" } },
-          { tags: { $regex: word, $options: "i" } }
+          { question: { $regex: escaped, $options: "i" } },
+          { normalizedQuestion: { $regex: escaped, $options: "i" } },
+          { tags: { $regex: escaped, $options: "i" } }
         ]
       });
     }
@@ -420,11 +426,12 @@ async function searchMongoDBQA(normalizedMessage, audienceFilter, userRole, mess
   }
   
   // For admin, try partial match
-  if (!qaPair && userRole === "admin") {
+  if (!qaPair && userRole === "admin" && message.length > 5) {
+    const safePartial = escapeRegex(message.substring(0, 30));
     qaPair = await QAPair.findOne({
       $or: [
-        { question: { $regex: message.substring(0, 30), $options: "i" } },
-        { question: { $regex: normalizedMessage.substring(0, 30), $options: "i" } }
+        { question: { $regex: safePartial, $options: "i" } },
+        { question: { $regex: escapeRegex(normalizedMessage.substring(0, 30)), $options: "i" } }
       ],
       audience: { $in: ["admin", "public"] }
     });

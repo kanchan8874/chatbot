@@ -36,9 +36,9 @@ export default function HomePage() {
           <div className="text-center">
             {/* Main Headline */}
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
-              UP TO 25% OFF*
+              Mobiloitte
               <br />
-              <span className="text-4xl md:text-5xl lg:text-6xl">ON AI SOLUTIONS</span>
+              <span className="text-4xl md:text-5xl lg:text-6xl">AI SOLUTIONS</span>
             </h1>
             
             {/* Sub-headline */}
@@ -89,7 +89,7 @@ export default function HomePage() {
       </section>
 
       {/* Services Section */}
-      <section id="services" className="py-20 bg-gray-50">
+      {/* <section id="services" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-4xl font-bold text-center text-gray-900 mb-12">
             Our AI Services
@@ -107,10 +107,10 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Solutions Section */}
-      <section id="solutions" className="py-20 bg-white">
+      {/* <section id="solutions" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-4xl font-bold text-center text-gray-900 mb-12">
             Solutions
@@ -127,20 +127,20 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* About Section */}
-      <section id="about" className="py-20 bg-gray-50">
+      {/* <section id="about" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-4xl font-bold text-gray-900 mb-6">About Mobiloitte</h2>
           <p className="text-lg text-gray-600 max-w-3xl mx-auto">
             With over 15 years of experience, Mobiloitte delivers custom AI solutions tailored to specific business needs.
           </p>
         </div>
-      </section>
+      </section> */}
 
       {/* Contact Section */}
-      <section id="contact" className="py-20 bg-white">
+      {/* <section id="contact" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-4xl font-bold text-gray-900 mb-6">Contact Us</h2>
           <p className="text-lg text-gray-600 mb-8">
@@ -153,10 +153,10 @@ export default function HomePage() {
             Chat with Us
           </button>
         </div>
-      </section>
+      </section> */}
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12">
+      {/* <footer className="bg-gray-900 text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
@@ -194,7 +194,7 @@ export default function HomePage() {
             <p>&copy; 2024 Mobiloitte. All rights reserved.</p>
           </div>
         </div>
-      </footer>
+      </footer> */}
 
       {/* Chatbot Avatar */}
       <ChatbotAvatar onOpen={() => setChatbotOpen(true)} />

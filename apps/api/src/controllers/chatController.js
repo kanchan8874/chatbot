@@ -99,7 +99,7 @@ async function generateLLMResponse(question, context, userRole, detectedLanguage
 async function handleMessage(req, res) {
   try {
     const startTime = Date.now();
-    const { message, sessionId, authToken } = req.body;
+    const { message, sessionId, authToken, language: userProvidedLanguage } = req.body;
     const rateResult = checkRateLimit(req.user?.role || "client", req.ip);
     if (rateResult) {
       return res.status(429).json({
@@ -167,8 +167,9 @@ async function handleMessage(req, res) {
       });
     }
     
-    // Step 5: Language detection
-    const detectedLanguage = await detectLanguage(message);
+    // Step 5: Language detection (Prioritize user selection from dropdown)
+    const autoDetectedLanguage = await detectLanguage(message);
+    const detectedLanguage = userProvidedLanguage || autoDetectedLanguage;
     if (detectedLanguage !== 'und' && detectedLanguage !== 'eng') {
       console.log(`🌐 Detected language: ${detectedLanguage} for message: "${message.substring(0, 50)}"`);
     }
@@ -208,6 +209,24 @@ async function handleMessage(req, res) {
         context: { type: "out_of_scope", language: detectedLanguage }
       });
     }
+
+    // Step 7.1: Fetch Session History (for intelligent context)
+    let sessionHistory = [];
+    if (sessionId) {
+      try {
+        const recentLogs = await ChatLog.find({ sessionId })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .lean();
+        
+        sessionHistory = recentLogs.reverse().map(log => ({
+          role: log.role === 'client' ? 'user' : 'assistant',
+          message: log.message
+        }));
+      } catch (err) {
+        console.warn("Failed to fetch session history:", err.message);
+      }
+    }
     
     // Step 8: Classify intent
     const intent = classifyIntent(message, userRole);
@@ -228,6 +247,18 @@ async function handleMessage(req, res) {
         break;
         
       case "csv_qa":
+      case "founder":
+      case "location":
+      case "website":
+      case "contact":
+      case "services_overview":
+      case "company_overview":
+      case "technologies":
+      case "experience":
+      case "training_center":
+      case "traditional_ai":
+      case "blockchain_solutions":
+      case "web_mobile_ai":
         // Determine audience filter
         let audienceFilter;
         if (userRole === "admin") {
@@ -302,7 +333,7 @@ async function handleMessage(req, res) {
         }
         
         // Handle general client queries
-        const clientResult = await handleClientQuery(message, normalizedMessage, userRole, audienceFilter);
+        const clientResult = await handleClientQuery(message, normalizedMessage, userRole, audienceFilter, sessionId, sessionHistory);
         response = clientResult.response;
         context = clientResult.context;
 

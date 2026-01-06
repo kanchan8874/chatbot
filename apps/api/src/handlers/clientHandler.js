@@ -4,6 +4,7 @@
  */
 
 const QAPair = require("../database/models/QAPair");
+const ChatLog = require("../database/models/ChatLog");
 const { normalizeText, generateQuestionHash, hasMeaningfulOverlap } = require('../utils/textProcessing');
 const { detectTopicIntent, INTENT_TO_CANONICAL_QUESTION, isSpecificFactQuery, detectMultiIntent, detectClarificationIntent, detectDetailedIntent } = require('../utils/intentDetection');
 const { searchCSVQA, searchMongoDBByKeywords, searchMongoDBQA, searchDocuments } = require('../utils/searchUtils');
@@ -52,38 +53,55 @@ async function generateLLMResponse(question, context, userRole) {
 /**
  * Handle client/general queries
  */
-async function handleClientQuery(message, normalizedMessage, userRole, audienceFilter) {
-  // 0.1) QUERY EXPANSION (Improve retrieval for generic terms)
-  let searchMessage = message;
+async function handleClientQuery(message, normalizedMessage, userRole, audienceFilter, sessionId, sessionHistory = []) {
+  // 0.0) CONTEXT AWARENESS (Intelligent Query Rewriting)
+  let standaloneQuery = message;
+  let normalizedStandaloneQuery = normalizedMessage;
+
+  if (sessionHistory && sessionHistory.length > 0) {
+    console.log(`🧠 Attempting intelligent query rewriting for: "${message}"`);
+    const rewritten = await freeLLMService.translateToStandaloneQuery(message, sessionHistory);
+    if (rewritten && rewritten !== message) {
+      console.log(`✨ Rewritten Query: "${rewritten}"`);
+      standaloneQuery = rewritten;
+      normalizedStandaloneQuery = rewritten.toLowerCase();
+    }
+  }
+
+  // 0.1) QUERY EXPANSION (Improve retrieval for generic terms - Fallback)
+  let searchMessage = standaloneQuery;
   const genericCompanyContexts = [
     "this company", "the company", "your company", "this organization", "your organization",
-    "is company", "of company", "about company"
+    "is company", "of company", "about company", "the firm", "the agency"
   ];
-  const hasOfficialName = normalizedMessage.includes("mobiloitte");
-  const hasTypo = normalizedMessage.includes("mobiloite");
-  const hasGeneric = genericCompanyContexts.some(ctx => normalizedMessage.includes(ctx));
+  const pronouns = [" it ", " its ", " they ", " their "];
   
-  if (!hasOfficialName && (hasGeneric || hasTypo)) {
-    console.log(`🔍 Company reference or typo ("${hasTypo ? 'mobiloite' : 'generic'}") detected. Injecting 'Mobiloitte' for retrieval.`);
-    searchMessage = `${message} (Mobiloitte)`;
+  const hasOfficialName = normalizedStandaloneQuery.includes("mobiloitte");
+  const hasTypo = normalizedStandaloneQuery.includes("mobiloite");
+  const hasGeneric = genericCompanyContexts.some(ctx => normalizedStandaloneQuery.includes(ctx));
+  const hasPronoun = pronouns.some(p => ` ${normalizedStandaloneQuery} `.includes(p));
+  
+  if (!hasOfficialName && (hasGeneric || hasTypo || hasPronoun)) {
+    // If rewriting didn't inject the name, we manually inject default context
+    searchMessage = `${standaloneQuery} (Mobiloitte)`;
   }
   const normalizedSearchMessage = searchMessage.toLowerCase();
 
   // 0.1) MULTI-INTENT CHECK (Fact + Context)
-  if (detectMultiIntent(normalizedMessage)) {
+  if (detectMultiIntent(normalizedStandaloneQuery)) {
     console.log("🔀 Multi-intent query detected. Executing combined retrieval.");
-    return await handleMultiIntentQuery(searchMessage, normalizedSearchMessage, userRole, audienceFilter);
+    return await handleMultiIntentQuery(standaloneQuery, normalizedStandaloneQuery, userRole, audienceFilter);
   }
 
   // 0.2) CLARIFICATION INTENT (Is this X? Kya ye X hai?)
-  const isClarification = detectClarificationIntent(normalizedMessage);
+  const isClarification = detectClarificationIntent(normalizedStandaloneQuery);
   
   // 0.3) DETAILED INTENT CHECK
-  const isDetailedIntent = detectDetailedIntent(normalizedMessage);
+  const isDetailedIntent = detectDetailedIntent(normalizedStandaloneQuery);
 
   // SPECIFIC FACT QUERIES FIRST (founder, address, HQ, CEO, establishment year, contact)
-  if (isSpecificFactQuery(normalizedMessage)) {
-    const factResponse = await handleSpecificFactQuery(message, normalizedMessage, userRole, audienceFilter);
+  if (isSpecificFactQuery(normalizedStandaloneQuery)) {
+    const factResponse = await handleSpecificFactQuery(standaloneQuery, normalizedStandaloneQuery, userRole, audienceFilter, null, sessionHistory);
     return factResponse;
   }
 
@@ -114,8 +132,16 @@ async function handleClientQuery(message, normalizedMessage, userRole, audienceF
 
 
   
-  // 1) Detect topic intent and build canonical CSV question
+  // 1) Detect specific topic intent
   const topicIntent = detectTopicIntent(normalizedSearchMessage);
+  
+  // 1.1) HANDLE SPECIFIC FACT INTENTS STRICTLY (Founder, Location, Website, Contact)
+  const factIntents = ["founder", "location", "website", "contact"];
+  if (factIntents.includes(topicIntent)) {
+    console.log(`🎯 Specific fact intent detected: ${topicIntent}. Routing to strict handler.`);
+    return await handleSpecificFactQuery(standaloneQuery, normalizedStandaloneQuery, userRole, audienceFilter, topicIntent, sessionHistory);
+  }
+
   const canonicalNormalizedQuestion =
     (topicIntent && INTENT_TO_CANONICAL_QUESTION[topicIntent]) ||
     normalizedSearchMessage;
@@ -123,6 +149,10 @@ async function handleClientQuery(message, normalizedMessage, userRole, audienceF
   // 2) STRICT CSV MATCHING (HIGH‑CONFIDENCE ONLY)
   // 2.1 Exact/hash match in MongoDB
   let qaPair = await searchMongoDBQA(normalizedMessage, audienceFilter, userRole, message);
+  
+  if (!qaPair && canonicalNormalizedQuestion !== normalizedMessage) {
+    qaPair = await searchMongoDBQA(canonicalNormalizedQuestion, audienceFilter, userRole, message);
+  }
   
   if (qaPair) {
     console.log(`✅ Using exact/hash CSV Q&A match: "${qaPair.question.substring(0, 60)}..."`);
@@ -195,7 +225,7 @@ async function handleClientQuery(message, normalizedMessage, userRole, audienceF
   if (goodChunks.length > 0) {
     console.log(`✅ Using document RAG with threshold ${threshold} (top score: ${topScore})`);
     const context = { type: "document", chunks: goodChunks };
-    const response = await generateLLMResponse(message, context, userRole);
+    const response = await generateLLMResponse(standaloneQuery, context, userRole);
     return {
       response,
       context
@@ -227,9 +257,18 @@ async function handleClientQuery(message, normalizedMessage, userRole, audienceF
  * Handle specific fact queries with strict, short, factual answers
  * Pipeline: CSV exact/hash -> semantic CSV -> keyword CSV -> RAG doc -> LLM synthesis (strict)
  */
-async function handleSpecificFactQuery(message, normalizedMessage, userRole, audienceFilter) {
+async function handleSpecificFactQuery(message, normalizedMessage, userRole, audienceFilter, specificIntent = null, sessionHistory = []) {
+  // 0) Use Canonical Question Mapping if available
+  let searchQuery = normalizedMessage;
+  if (specificIntent && INTENT_TO_CANONICAL_QUESTION[specificIntent]) {
+    searchQuery = INTENT_TO_CANONICAL_QUESTION[specificIntent];
+  }
+
   // 1) Exact/hash match in Mongo (CSV)
-  let qaPair = await searchMongoDBQA(normalizedMessage, audienceFilter, userRole, message);
+  let qaPair = await searchMongoDBQA(searchQuery, audienceFilter, userRole, message);
+  if (!qaPair && searchQuery !== normalizedMessage) {
+    qaPair = await searchMongoDBQA(normalizedMessage, audienceFilter, userRole, message);
+  }
   if (qaPair) {
     return {
       response: qaPair.answer,
@@ -237,19 +276,19 @@ async function handleSpecificFactQuery(message, normalizedMessage, userRole, aud
     };
   }
 
-  // 2) Semantic CSV search
-  const semanticQA = await searchCSVQA(normalizedMessage, userRole);
-  if (semanticQA && semanticQA.score && semanticQA.score >= 0.7 && hasMeaningfulOverlap(message, semanticQA.question)) {
+  // 2) Semantic CSV search - Stricter for facts (0.85)
+  const semanticQA = await searchCSVQA(searchQuery, userRole);
+  if (semanticQA && semanticQA.score && semanticQA.score >= 0.85 && hasMeaningfulOverlap(message, semanticQA.question)) {
     return {
       response: semanticQA.answer,
-      context: { type: "qa", answer: semanticQA.answer }
+      context: { type: "qa", answer: semanticQA.answer, score: semanticQA.score }
     };
   }
 
-  // 3) Keyword-based CSV search
-  qaPair = await searchMongoDBByKeywords(normalizedMessage, audienceFilter, {
+  // 3) Keyword-based CSV search (With prioritization for specific intent)
+  qaPair = await searchMongoDBByKeywords(searchQuery, audienceFilter, {
     skipFAQCheck: true,
-    prioritizeFounder: true
+    prioritizeFounder: specificIntent === "founder"
   });
   if (qaPair) {
     return {
@@ -258,20 +297,41 @@ async function handleSpecificFactQuery(message, normalizedMessage, userRole, aud
     };
   }
 
-  // 4) Document RAG (top relevant chunks)
+  // 4) Document RAG (top relevant chunks) - Stricter for facts (0.50 instead of 0.35)
   const namespace = userRole === "employee" ? "employee_docs" : "public_docs";
-  const chunks = await searchDocuments(message, userRole, namespace);
-  const goodChunks = chunks && chunks.length > 0 ? chunks.filter((c) => c.score >= 0.35).slice(0, 3) : [];
+  let chunks = await searchDocuments(message, userRole, namespace);
+  const factThreshold = 0.50;
+  let goodChunks = chunks && chunks.length > 0 ? chunks.filter((c) => c.score >= factThreshold).slice(0, 3) : [];
+
+  // 4.1) INTELLIGENT FALLBACK: If specific fact missing, search for broader contact/company context
+  if (goodChunks.length === 0) {
+    console.log(`🔍 Specific fact not found for "${specificIntent}". Trying broader context bridge...`);
+    const bridgeQuery = specificIntent === "founder" 
+      ? "Mobiloitte leadership history and company experience" 
+      : "Mobiloitte official contact information and office links";
+    
+    const bridgeChunks = await searchDocuments(bridgeQuery, userRole, namespace);
+    goodChunks = bridgeChunks && bridgeChunks.length > 0 ? bridgeChunks.filter((c) => c.score >= 0.40).slice(0, 2) : [];
+  }
 
   if (goodChunks.length === 0) {
+    // ENFORCE STRICT REFUSAL ONLY IF NO BRIDGE FOUND
+    const refusalMessages = {
+      founder: "I'm sorry, I don't have verified information about the founder of this company in my records.",
+      location: "I don't have the specific office location or address details verified for this company.",
+      website: "I couldn't find the official website link in our verified data.",
+      contact: "I don't have the verified contact information (phone/email) available right now.",
+      default: "I don't have sufficient verified information to answer this specific factual question."
+    };
+    
     return {
-      response: "I couldn’t find that information right now. Please try asking with a bit more detail.",
-      context: { type: "no_data_found" }
+      response: refusalMessages[specificIntent] || refusalMessages.default,
+      context: { type: "strict_fact_refusal", intent: specificIntent }
     };
   }
 
   // 5) LLM synthesis (strict, short)
-  const context = { type: "document_fact", chunks: goodChunks };
+  const context = { type: "document_fact", chunks: goodChunks, fact_intent: specificIntent };
   const response = await generateLLMResponse(message, context, userRole);
 
   return {

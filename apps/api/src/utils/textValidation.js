@@ -72,8 +72,12 @@ async function loadProfanityHindi() {
 }
 
 /**
- * Enhanced gibberish detection using word-level analysis, vowel ratios, entropy, and dictionary checks
+ * Escape special characters in string for use in a regular expression
  */
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Enhanced gibberish detection using word-level analysis, vowel ratios, entropy, and dictionary checks
  */
@@ -174,6 +178,12 @@ function isGibberish(text, userRole = "client") {
       // Unknown but follows phonotactic-ish patterns
       meaningfulCount++;
     }
+  }
+
+  // 4. Repeated Single Characters check (e.g., "aaaaaaaa")
+  if (words.length === 1 && words[0].length > 4) {
+    const uniqueChars = new Set(words[0].toLowerCase().split('')).size;
+    if (uniqueChars === 1) return true;
   }
 
   // If no alpha tokens, it's not gibberish (e.g., numbers, emojis, punctuation) - let downstream handle
@@ -308,19 +318,24 @@ function isMeaningfulInquiry(text) {
 
   // 4. Fragment check (Too short and no domain/question signal)
   const words = trimmed.split(/\s+/);
-  if (words.length <= 3 && !hasDomainTerm && !startsWithQuestion) {
+  if (words.length <= 2 && !hasDomainTerm && !startsWithQuestion) {
     return false;
   }
 
-  // 5. If it contains at least one meaningful professional token from our expanded list in isGibberish, 
-  // we give it the benefit of the doubt as a query. 
-  // Otherwise, if it's just common words like "the blue sky" or "today is nice", it fails.
-  return hasDomainTerm; 
+  // 5. Semantic Relevance Check: Reject non-professional statements that lack domain signals
+  // Example: "blue sky", "heavy rain", "today is good" should fail if they don't mention Mobiloitte/Services
+  if (!hasDomainTerm && !startsWithQuestion && !endsWithQuestionMark) {
+    // If it's a statement with no professional signal, return false
+    return false;
+  }
+
+  return true; 
 }
 
 module.exports = {
   isGibberish,
   isMeaningfulInquiry,
   detectLanguage,
-  containsProfanity
+  containsProfanity,
+  escapeRegex
 };
